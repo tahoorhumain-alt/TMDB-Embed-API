@@ -1,20 +1,14 @@
-// Lightweight proxy/m3u8/segment/subtitle rewriting layer. thanks to https://github.com/cinepro-org/ for the original code.
-// Adapted from external project (user supplied) to fit CommonJS style and existing config system.
-// Provides conditional route registration via enableProxy flag.
-
 const cors = require('cors');
 const fetch = require('node-fetch');
+const { spawn } = require('child_process'); // 👈 Added for FFmpeg
 
 const CACHE_MAX_SIZE = 2000;
 const CACHE_EXPIRY_MS = 2 * 60 * 60 * 1000; // 2 hours
 const segmentCache = new Map();
-// Track first open-ended (bytes=0-) range per target to clamp only once per TTL window
 const openRangeClampMap = new Map();
 const OPEN_RANGE_CLAMP_TTL_MS = 5 * 60 * 1000; // 5 minutes
-// Progressive open-ended growth tracking: keeps expanding bytes=0- served window.
-const progressiveOpenMap = new Map(); // url -> { lastEnd }
-// Tail prefetch cache: stores last N KB for quick tail range responses
-const tailPrefetchMap = new Map(); // url -> { data: Buffer, start: number, end: number, size: number, ts: number }
+const progressiveOpenMap = new Map();
+const tailPrefetchMap = new Map();
 const TAIL_PREFETCH_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 function isCacheDisabled() {
@@ -96,7 +90,6 @@ function extractOriginalUrl(proxyUrl) {
                     try { decoded = decodeURIComponent(decoded); } catch { break; }
                 }
                 if (decoded.startsWith('http://') || decoded.startsWith('https://')) return decoded;
-                // If it's just a path (like Vidlink /proxy/wiwii/...), keep the full original URL
                 return proxyUrl;
             }
         }
@@ -155,13 +148,11 @@ function rewriteM3u8(content, targetUrl, baseProxyUrl, headers) {
 }
 
 function createProxyRoutes(app) {
-    // m3u8 playlist proxy
+    // 1. m3u8 playlist proxy
     app.get('/m3u8-proxy', cors(), async (req, res) => {
         const targetUrl = req.query.url; if (!targetUrl) return res.status(400).json({ error: 'URL parameter required' });
         let headers = {};
-        try { headers = JSON.parse(req.query.headers || '{}'); } catch {
-            // Ignore URL parsing errors
-        }
+        try { headers = JSON.parse(req.query.headers || '{}'); } catch {}
         try {
             const response = await fetch(targetUrl, { headers: { 'User-Agent': DEFAULT_UA, ...headers } });
             if (!response.ok) return res.status(response.status).json({ error: `M3U8 fetch failed: ${response.status}` });
@@ -176,7 +167,7 @@ function createProxyRoutes(app) {
         } catch (e) { res.status(500).json({ error: e.message }); }
     });
 
-    // ts / key segment proxy
+    // 2. ts / key segment proxy
     app.get('/ts-proxy', cors(), async (req, res) => {
         const targetUrl = req.query.url; if (!targetUrl) return res.status(400).json({ error: 'URL parameter required' });
         const debug = req.query.debug === '1';
@@ -187,25 +178,22 @@ function createProxyRoutes(app) {
         const tailPrefetchEnabled = req.query.tailPrefetch !== '0';
         let tailPrefetchKB = parseInt(req.query.tailPrefetchKB || '256', 10);
         if (isNaN(tailPrefetchKB) || tailPrefetchKB < 64) tailPrefetchKB = 256;
-        if (tailPrefetchKB > 2048) tailPrefetchKB = 2048; // max 2MB tail window
+        if (tailPrefetchKB > 2048) tailPrefetchKB = 2048;
         let openChunkKB = parseInt(req.query.openChunkKB || '4096', 10);
         if (isNaN(openChunkKB) || openChunkKB < 64) openChunkKB = 4096;
-        if (openChunkKB > 16384) openChunkKB = 16384; // cap at 16MB
+        if (openChunkKB > 16384) openChunkKB = 16384;
         let initChunkKB = parseInt(req.query.initChunkKB || '512', 10);
         if (isNaN(initChunkKB) || initChunkKB < 64) initChunkKB = 512;
-        if (initChunkKB > 2048) initChunkKB = 2048; // hard cap 2MB
-        let headers = {}; try { headers = JSON.parse(req.query.headers || '{}'); } catch {
-            // Ignore URL parsing errors
-        }
-        // Pass through Range header for progressive playback / seeking
+        if (initChunkKB > 2048) initChunkKB = 2048;
+        let headers = {}; try { headers = JSON.parse(req.query.headers || '{}'); } catch {}
+        
         const range = req.headers['range'];
         let appliedClamp = false;
         let effectiveRange = range;
         if (range) headers.Range = range;
-        // Clamp first open-ended bytes=0- request to a bounded span (once per TTL) to avoid gigantic initial 206
+        
         if (range && /^bytes=0-\s*$/i.test(range) && !force200) {
             const now = Date.now();
-            // Progressive growth supersedes single-shot clamp if enabled
             if (progressiveOpen) {
                 const prog = progressiveOpenMap.get(targetUrl) || { lastEnd: -1 };
                 const prevEnd = prog.lastEnd;
@@ -215,7 +203,7 @@ function createProxyRoutes(app) {
                 } else {
                     const increment = openChunkKB * 1024;
                     nextEnd = prog.lastEnd + increment;
-                    const maxCap = 256 * 1024 * 1024 - 1; // 256MB
+                    const maxCap = 256 * 1024 * 1024 - 1;
                     if (nextEnd > maxCap) nextEnd = maxCap;
                 }
                 const newRange = `bytes=0-${nextEnd}`;
@@ -223,8 +211,7 @@ function createProxyRoutes(app) {
                 effectiveRange = newRange;
                 prog.lastEnd = nextEnd;
                 progressiveOpenMap.set(targetUrl, prog);
-                appliedClamp = true; // reuse flag for logging
-                if (debug) console.log('[ts-proxy] progressiveOpen expand', { prevEnd, nextEnd, increment: openChunkKB * 1024 });
+                appliedClamp = true;
             } else if (clampOpen) {
                 const lastTs = openRangeClampMap.get(targetUrl);
                 if (!lastTs || (now - lastTs) > OPEN_RANGE_CLAMP_TTL_MS) {
@@ -237,7 +224,7 @@ function createProxyRoutes(app) {
                 }
             }
         }
-        if (debug) console.log('[ts-proxy] incoming', { url: targetUrl, range, effectiveRange, appliedClamp, clampOpen, progressiveOpen, openChunkKB, noSynth, initChunkKB, force200, tailPrefetchEnabled, tailPrefetchKB });
+        
         if (!isCacheDisabled()) {
             const cached = getCachedSegment(targetUrl);
             if (cached) {
@@ -246,12 +233,10 @@ function createProxyRoutes(app) {
                 res.setHeader('Cache-Control', 'public, max-age=3600');
                 res.setHeader('Access-Control-Allow-Origin', '*');
                 res.setHeader('Accept-Ranges', 'bytes');
-                if (debug) console.log('[ts-proxy] cache hit');
                 return res.send(Buffer.from(cached.data));
             }
         }
         try {
-            // If we have a tail prefetch entry and the client requests a tail range fully inside it, serve from memory early.
             if (effectiveRange && /^bytes=\d+-$/i.test(effectiveRange)) {
                 const tailEntry = tailPrefetchMap.get(targetUrl);
                 if (tailEntry) {
@@ -270,14 +255,12 @@ function createProxyRoutes(app) {
                             res.setHeader('Content-Range', `bytes ${startReq}-${endByte}/${tailEntry.size}`);
                             res.setHeader('Cache-Control', 'public, max-age=3600');
                             res.setHeader('Access-Control-Allow-Origin', '*');
-                            if (debug) console.log('[ts-proxy] tail serve hit', { startReq, cachedStart: tailEntry.start, cachedEnd: tailEntry.end, size: tailEntry.size });
                             return res.end(slice);
                         }
                     }
                 }
             }
 
-            // HEAD preflight (only when no explicit Range requested) to get size for synthesized partial response
             let contentLength = null;
             let upstreamAcceptRanges = null;
             if (!effectiveRange) {
@@ -286,36 +269,24 @@ function createProxyRoutes(app) {
                     if (headResp.ok) {
                         contentLength = headResp.headers.get('content-length');
                         upstreamAcceptRanges = headResp.headers.get('accept-ranges');
-                        if (debug) console.log('[ts-proxy] HEAD ok', { contentLength, upstreamAcceptRanges });
-                    } else if (debug) {
-                        console.log('[ts-proxy] HEAD status', headResp.status);
                     }
-                } catch (_e) { if (debug) console.log('[ts-proxy] HEAD failed'); }
+                } catch (_e) {}
             }
 
-            // Fallback probe: if still no size, attempt a 0-0 range request to derive total size from Content-Range
             if (!effectiveRange && !contentLength) {
                 try {
                     const probeRange = 'bytes=0-0';
-                    if (debug) console.log('[ts-proxy] probe range');
                     const probeResp = await fetch(targetUrl, { headers: { 'User-Agent': DEFAULT_UA, ...headers, 'Range': probeRange } });
                     if (probeResp.status === 206) {
                         const cr = probeResp.headers.get('content-range');
                         if (cr) {
                             const m = cr.match(/\/(\d+)$/); if (m) contentLength = m[1];
                         }
-                        try { await probeResp.arrayBuffer(); } catch (readErr) {
-                            if (debug) console.log('[ts-proxy] probe body read failed', readErr.message);
-                        }
-                        if (debug) console.log('[ts-proxy] probe success', { contentLength });
-                    } else if (debug) {
-                        console.log('[ts-proxy] probe status', probeResp.status);
+                        try { await probeResp.arrayBuffer(); } catch (readErr) {}
                     }
-                } catch (_e) { if (debug) console.log('[ts-proxy] probe failed'); }
+                } catch (_e) {}
             }
-            if (debug && contentLength) console.log('[ts-proxy] size determined', contentLength);
 
-            // Initiate tail prefetch asynchronously (once) when size known and feature enabled
             if (tailPrefetchEnabled && contentLength && !tailPrefetchMap.has(targetUrl)) {
                 const total = parseInt(contentLength, 10);
                 if (!isNaN(total) && total > 0) {
@@ -324,7 +295,6 @@ function createProxyRoutes(app) {
                     const tailRange = `bytes=${start}-`;
                     (async () => {
                         try {
-                            if (debug) console.log('[ts-proxy] tail prefetch start', { tailRange });
                             const tr = await fetch(targetUrl, { headers: { 'User-Agent': DEFAULT_UA, ...headers, Range: tailRange } });
                             if (tr.status === 206) {
                                 const buf = Buffer.from(await tr.arrayBuffer());
@@ -335,19 +305,15 @@ function createProxyRoutes(app) {
                                         const s = parseInt(mm[1], 10); const e = parseInt(mm[2], 10); const sz = parseInt(mm[3], 10);
                                         if (!isNaN(s) && !isNaN(e) && !isNaN(sz)) {
                                             tailPrefetchMap.set(targetUrl, { data: buf, start: s, end: e, size: sz, ts: Date.now() });
-                                            if (debug) console.log('[ts-proxy] tail prefetch success', { start: s, end: e, bytes: buf.length });
                                         }
                                     }
                                 }
-                            } else if (debug) {
-                                console.log('[ts-proxy] tail prefetch status', tr.status);
                             }
-                        } catch (e) { if (debug) console.log('[ts-proxy] tail prefetch error', e.message); }
+                        } catch (e) {}
                     })();
                 }
             }
 
-            // If no range requested but we now know size (HEAD or probe), synthesize an initial small range fetch to accelerate playback.
             if (!force200 && !effectiveRange && contentLength && !noSynth && req.query.progressiveOpen === '0') {
                 const total = parseInt(contentLength, 10);
                 const desired = initChunkKB * 1024;
@@ -355,7 +321,6 @@ function createProxyRoutes(app) {
                 const syntheticRange = `bytes=0-${chunkSize}`;
                 const resp = await fetch(targetUrl, { headers: { 'User-Agent': DEFAULT_UA, ...headers, 'Range': syntheticRange } });
                 if (resp.status === 206) {
-                    if (debug) console.log('[ts-proxy] synthetic 206', syntheticRange);
                     const upstreamCT = inferContentType(resp.headers.get('content-type'), targetUrl);
                     res.status(206);
                     res.setHeader('Content-Type', upstreamCT);
@@ -365,33 +330,23 @@ function createProxyRoutes(app) {
                     const cl = resp.headers.get('content-length'); if (cl) res.setHeader('Content-Length', cl);
                     res.setHeader('Cache-Control', 'public, max-age=3600');
                     res.setHeader('Access-Control-Allow-Origin', '*');
-                    // Pipe first chunk then leave connection open? Simpler: end after chunk; player will request next range.
                     return resp.body.pipe(res);
                 }
-                // If server ignored range (e.g., returned 200), fall through to normal logic below.
             }
 
             const upstreamOptions = { headers: { 'User-Agent': DEFAULT_UA, ...headers } };
-            // If client supplied a suffix range like bytes=0- we pass it; force200 strips Range
             if (force200 && headers.Range) delete headers.Range;
             const resp = await fetch(targetUrl, upstreamOptions);
             if (!resp.ok && resp.status !== 206) {
-                if (debug) console.log('[ts-proxy] upstream error', resp.status);
                 return res.status(resp.status).json({ error: `TS fetch failed: ${resp.status}` });
             }
-            // Forward partial content status when range used
-            if (effectiveRange && resp.status === 206 && !force200) { res.status(206); if (debug) console.log('[ts-proxy] forwarding 206', { appliedClamp }); }
-            if (force200 && resp.status === 206) {
-                // Some origins still return 206 even without Range; normalize to 200 for players expecting full stream
-                if (debug) console.log('[ts-proxy] normalizing 206 -> 200 due to force200');
-            }
-            // Copy key streaming headers
+            
+            if (effectiveRange && resp.status === 206 && !force200) { res.status(206); }
             const upstreamCT = inferContentType(resp.headers.get('content-type'), targetUrl);
             res.setHeader('Content-Type', upstreamCT);
             let cl = resp.headers.get('content-length');
             const crHeader = resp.headers.get('content-range');
             if (!cl && crHeader) {
-                // Try to derive length from range span
                 const m = crHeader.match(/bytes\s+(\d+)-(\d+)\/(\d+|\*)/i);
                 if (m) {
                     const start = parseInt(m[1], 10); const end = parseInt(m[2], 10);
@@ -404,17 +359,14 @@ function createProxyRoutes(app) {
             const contentRange = resp.headers.get('content-range'); if (contentRange && !force200) res.setHeader('Content-Range', contentRange);
             res.setHeader('Cache-Control', 'public, max-age=3600');
             res.setHeader('Access-Control-Allow-Origin', '*');
-            if (debug) console.log('[ts-proxy] streaming body', { status: resp.status, ct: upstreamCT, cl, contentRange: force200 ? undefined : contentRange });
             resp.body.pipe(res);
-        } catch (e) { if (debug) console.log('[ts-proxy] exception', e.message); res.status(500).json({ error: e.message }); }
+        } catch (e) { res.status(500).json({ error: e.message }); }
     });
 
-    // subtitle proxy
+    // 3. subtitle proxy
     app.get('/sub-proxy', cors(), async (req, res) => {
         const targetUrl = req.query.url; if (!targetUrl) return res.status(400).json({ error: 'url parameter required' });
-        let headers = {}; try { headers = JSON.parse(req.query.headers || '{}'); } catch {
-            // Ignore URL parsing errors
-        }
+        let headers = {}; try { headers = JSON.parse(req.query.headers || '{}'); } catch {}
         try {
             const resp = await fetch(targetUrl, { headers: { 'User-Agent': DEFAULT_UA, ...headers } });
             if (!resp.ok) return res.status(resp.status).json({ error: `subtitle fetch failed: ${resp.status}` });
@@ -423,6 +375,54 @@ function createProxyRoutes(app) {
             res.setHeader('Content-Type', resp.headers.get('content-type') || 'text/vtt');
             resp.body.pipe(res);
         } catch (e) { res.status(500).json({ error: e.message }); }
+    });
+
+    // 4. NEW: FFmpeg MKV Proxy (Fixes audio for Android/Chrome)
+    app.get('/proxy', cors(), async (req, res) => {
+        let targetUrl = req.query.url;
+        const referer = req.query.referer || '';
+        if (!targetUrl) return res.status(400).send('Missing url');
+
+        // Unwrap hbplay.pages.dev base64
+        if (targetUrl.includes('hbplay.pages.dev')) {
+            const urlObj = new URL(targetUrl);
+            const uParam = urlObj.searchParams.get('u');
+            if (uParam) {
+                targetUrl = Buffer.from(uParam, 'base64').toString('utf-8');
+            }
+        }
+
+        // Check if it's an MKV
+        if (targetUrl.toLowerCase().includes('.mkv') || targetUrl.toLowerCase().includes('.mp4')) {
+            res.setHeader('Content-Type', 'video/mp4');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            
+            const ffmpeg = spawn('ffmpeg', [
+                '-i', targetUrl,
+                '-c:v', 'copy',          // Copy video track (instant, no CPU)
+                '-c:a', 'aac',           // Convert audio to AAC (Fixes muted audio)
+                '-b:a', '192k',
+                '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+                '-f', 'mp4',
+                'pipe:1'
+            ]);
+
+            ffmpeg.stdout.pipe(res);
+            ffmpeg.stderr.on('data', (data) => console.log(`ffmpeg: ${data}`));
+            req.on('close', () => ffmpeg.kill('SIGKILL'));
+            return;
+        }
+
+        // Fallback for HLS (just in case frontend forces /proxy)
+        try {
+            const response = await fetch(targetUrl, { headers: { 'User-Agent': DEFAULT_UA, 'Referer': referer } });
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Content-Type', response.headers.get('content-type') || 'application/octet-stream');
+            if (response.headers.get('content-length')) res.setHeader('Content-Length', response.headers.get('content-length'));
+            response.body.pipe(res);
+        } catch (err) {
+            res.status(500).send('Proxy error');
+        }
     });
 }
 
@@ -436,16 +436,21 @@ function processStreamsForProxy(streams, serverUrl) {
         let host = '';
         try {
             host = new URL(original).hostname.toLowerCase();
-        } catch {
-            // Ignore errors
-        }
-        // Force specific hosts through ts-proxy (direct file style) even without extension
+        } catch {}
+
         if (host.includes('pixeldrain.') || host === 'video-downloads.googleusercontent.com') {
             return { ...s, url: `${serverUrl}/ts-proxy?url=${encodeURIComponent(original)}${hParam}` };
         }
-        if (/\.(mp4|mkv)(\?|$)/i.test(original)) {
+        
+        // 👇 Route MKVs to the new FFmpeg /proxy route to fix audio 👇
+        if (/\.mkv(\?|$)/i.test(original)) {
+            return { ...s, url: `${serverUrl}/proxy?url=${encodeURIComponent(original)}${hParam}` };
+        }
+        
+        if (/\.mp4(\?|$)/i.test(original)) {
             return { ...s, url: `${serverUrl}/ts-proxy?url=${encodeURIComponent(original)}${hParam}` };
         }
+        
         return { ...s, url: `${serverUrl}/m3u8-proxy?url=${encodeURIComponent(original)}${hParam}` };
     });
 }
