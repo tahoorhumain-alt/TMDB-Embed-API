@@ -1,6 +1,10 @@
+// Lightweight proxy/m3u8/segment/subtitle rewriting layer.
+// Adapted for FFmpeg static binary and hbplay MKV audio transcoding.
+
 const cors = require('cors');
 const fetch = require('node-fetch');
-const { spawn } = require('child_process'); // 👈 Added for FFmpeg
+const { spawn } = require('child_process');
+const ffmpegPath = require('ffmpeg-static'); // 👈 Added for Mobile/Render compatibility
 
 const CACHE_MAX_SIZE = 2000;
 const CACHE_EXPIRY_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -377,7 +381,7 @@ function createProxyRoutes(app) {
         } catch (e) { res.status(500).json({ error: e.message }); }
     });
 
-    // 4. NEW: FFmpeg MKV Proxy (Fixes audio for Android/Chrome)
+    // 4. FFmpeg MKV Proxy (Fixes audio for Android/Chrome)
     app.get('/proxy', cors(), async (req, res) => {
         let targetUrl = req.query.url;
         const referer = req.query.referer || '';
@@ -392,37 +396,38 @@ function createProxyRoutes(app) {
             }
         }
 
-        // Check if it's an MKV
-        if (targetUrl.toLowerCase().includes('.mkv') || targetUrl.toLowerCase().includes('.mp4')) {
-            res.setHeader('Content-Type', 'video/mp4');
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            
-            const ffmpeg = spawn('ffmpeg', [
-                '-i', targetUrl,
-                '-c:v', 'copy',          // Copy video track (instant, no CPU)
-                '-c:a', 'aac',           // Convert audio to AAC (Fixes muted audio)
-                '-b:a', '192k',
-                '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-                '-f', 'mp4',
-                'pipe:1'
-            ]);
+        // Check if it's an MKV (or just force all /proxy requests to transcode audio)
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        
+        // Use the static FFmpeg path from package.json
+        const ffmpeg = spawn(ffmpegPath, [
+            '-headers', `Referer: ${referer}\r\n`, // Pass referer to upstream
+            '-i', targetUrl,
+            '-c:v', 'copy',          // Copy video track (instant, no CPU)
+            '-c:a', 'aac',           // Convert audio to AAC (Fixes muted audio)
+            '-b:a', '192k',
+            '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+            '-f', 'mp4',
+            'pipe:1'
+        ]);
 
-            ffmpeg.stdout.pipe(res);
-            ffmpeg.stderr.on('data', (data) => console.log(`ffmpeg: ${data}`));
-            req.on('close', () => ffmpeg.kill('SIGKILL'));
-            return;
-        }
+        ffmpeg.stdout.pipe(res);
 
-        // Fallback for HLS (just in case frontend forces /proxy)
-        try {
-            const response = await fetch(targetUrl, { headers: { 'User-Agent': DEFAULT_UA, 'Referer': referer } });
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Content-Type', response.headers.get('content-type') || 'application/octet-stream');
-            if (response.headers.get('content-length')) res.setHeader('Content-Length', response.headers.get('content-length'));
-            response.body.pipe(res);
-        } catch (err) {
-            res.status(500).send('Proxy error');
-        }
+        // Log FFmpeg errors to Render console
+        ffmpeg.stderr.on('data', (data) => {
+            // console.log(`ffmpeg: ${data}`); // Uncomment if you need to debug
+        });
+
+        // Kill process if the user closes the video player
+        req.on('close', () => {
+            ffmpeg.kill('SIGKILL');
+        });
+        
+        ffmpeg.on('error', (err) => {
+            console.error('FFmpeg Error:', err);
+            if (!res.headersSent) res.status(500).send('FFmpeg execution failed');
+        });
     });
 }
 
@@ -433,6 +438,8 @@ function processStreamsForProxy(streams, serverUrl) {
         const original = extractOriginalUrl(s.url);
         const headers = s.headers || {};
         const hParam = Object.keys(headers).length ? `&headers=${encodeURIComponent(JSON.stringify(headers))}` : '';
+        const refParam = headers.Referer ? `&referer=${encodeURIComponent(headers.Referer)}` : '';
+
         let host = '';
         try {
             host = new URL(original).hostname.toLowerCase();
@@ -442,11 +449,12 @@ function processStreamsForProxy(streams, serverUrl) {
             return { ...s, url: `${serverUrl}/ts-proxy?url=${encodeURIComponent(original)}${hParam}` };
         }
         
-        // 👇 Route MKVs to the new FFmpeg /proxy route to fix audio 👇
+        // Route MKVs to the FFmpeg /proxy route to fix audio
         if (/\.mkv(\?|$)/i.test(original)) {
-            return { ...s, url: `${serverUrl}/proxy?url=${encodeURIComponent(original)}${hParam}` };
+            return { ...s, url: `${serverUrl}/proxy?url=${encodeURIComponent(original)}${hParam}${refParam}` };
         }
         
+        // MP4s use the faster ts-proxy
         if (/\.mp4(\?|$)/i.test(original)) {
             return { ...s, url: `${serverUrl}/ts-proxy?url=${encodeURIComponent(original)}${hParam}` };
         }
