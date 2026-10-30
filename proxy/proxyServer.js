@@ -1,27 +1,28 @@
 const express = require('express');
 const fetch = require('node-fetch');
 const { spawn } = require('child_process');
-const ffmpegPath = require('ffmpeg-static'); // 👈 Uses the static binary from package.json
-const app = express();
+const ffmpegPath = require('ffmpeg-static');
 
-// Enable CORS for all requests
-app.use((req, res, next) => {
+// Create an Express router instead of a standalone app
+const router = express.Router();
+
+// Enable CORS for all proxy requests
+router.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Headers', '*');
     next();
 });
 
 // ---------------------------------------------------------
-// UNIVERSAL PROXY ROUTE
-// Handles: HLS (.m3u8), MKV (with FFmpeg audio fix), MP4/other binary
+// THE /proxy ROUTE
 // ---------------------------------------------------------
-app.get('/proxy', async (req, res) => {
+router.get('/proxy', async (req, res) => {
     let targetUrl = req.query.url;
     const referer = req.query.referer || '';
 
     if (!targetUrl) return res.status(400).send('Missing url parameter');
 
-    // 1. Unwrap hbplay.pages.dev base64 URLs if present
+    // 1. Unwrap hbplay.pages.dev base64 URLs
     if (targetUrl.includes('hbplay.pages.dev')) {
         try {
             const urlObj = new URL(targetUrl);
@@ -60,6 +61,7 @@ app.get('/proxy', async (req, res) => {
             const lines = content.split('\n');
             const rewrittenLines = lines.map(line => {
                 const trimmed = line.trim();
+                
                 // Ignore empty lines and tags
                 if (trimmed === '' || trimmed.startsWith('#')) {
                     return line; 
@@ -158,8 +160,5 @@ app.get('/proxy', async (req, res) => {
     }
 });
 
-// Start the server
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-    console.log(`Proxy server running on port ${PORT}`);
-});
+// Export the router
+module.exports = router;
