@@ -40,9 +40,9 @@
     <div id="cacheDisabledBanner" class="alert info" style="display:none;">Cache is <strong>DISABLED</strong>; expect slower responses & higher source load.</div>
     <div id="tmdbMissingBanner" class="alert warning" style="display:none;">No TMDB API Keys configured. Metadata-dependent providers (Showbox, 4khdhub) may degrade.</div>
     
-    <!-- Add a banner for restored settings -->
+    <!-- Banner for restored settings -->
     <div id="localBackupWarn" class="alert warning" style="display:none; background: #ff9800; color: #000;">
-      <strong>Server Restarted!</strong> Your server settings were wiped. We have restored your settings from your browser's local backup. Scroll down and click <strong>Save Overrides</strong> to push them back to the server.
+      <strong>Server Restarted!</strong> Your server settings were wiped. Auto-restoring settings from your browser's local backup now...
     </div>
 
     <form id="cfgForm" onsubmit="return false;" class="panels">
@@ -226,125 +226,67 @@
     </div>
   </div>
 
-  <!-- AUTO-INJECT & BACKUP SCRIPT -->
+  <!-- AGGRESSIVE AUTO-INJECT & AUTO-SAVE SCRIPT -->
   <script>
     document.addEventListener('DOMContentLoaded', function() {
-      const form = document.getElementById('cfgForm');
-      const saveBtn = document.getElementById('saveBtn');
-      
-      // YOUR HARDCODED CREDENTIALS
       const HARDCODED_TMDB_KEY = "9fca360bfe48e49cff3d54a1e29ab578";
       const HARDCODED_FEBBOX_COOKIE = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3OTMzMzA4ODUsIm5iZiI6MTc5MzMzMDg4NSwiZXhwIjoxODI0NDM0OTA1LCJkYXRhIjp7InVpZCI6MjU1MjU3NiwidG9rZW4iOiIxOTliYzNhYTU0MDIyZmFjODQwMzcwNWUxZjkxYzJjMCJ9fQ.uliT3Yt2q0VuwhxDHwJrG4G9FY31U68DVrb5B3LpHcU";
       
-      // 1. Auto-inject the TMDB key if it's missing
-      setTimeout(() => {
+      let attempts = 0;
+      
+      // Check every 1 second (up to 20 seconds) for the page to load fully
+      const interval = setInterval(() => {
+        attempts++;
+        
         const keyInput = document.getElementById('tmdbKeyInput');
         const addKeyBtn = document.getElementById('addTmdbKeyBtn');
         const keyList = document.getElementById('tmdbKeyList');
         
-        if (keyInput && addKeyBtn && keyList) {
-            if (!keyList.innerText.includes(HARDCODED_TMDB_KEY)) {
-                keyInput.value = HARDCODED_TMDB_KEY;
-                addKeyBtn.click();
-                keyInput.value = ''; 
-            }
-        }
-      }, 1500);
-
-      // 2. Auto-inject the FebBox Cookie if it's missing
-      setTimeout(() => {
         const cookieInput = document.getElementById('febboxCookieInput');
         const addCookieBtn = document.getElementById('addFebboxCookieBtn');
         const cookieList = document.getElementById('febboxCookieList');
         
+        const saveBtn = document.getElementById('saveBtn');
+
+        let changed = false;
+
+        // 1. Inject TMDB Key automatically
+        if (keyInput && addKeyBtn && keyList) {
+            if (!keyList.innerText.includes(HARDCODED_TMDB_KEY)) {
+                keyInput.value = HARDCODED_TMDB_KEY;
+                // Trigger input event so the framework registers the change
+                keyInput.dispatchEvent(new Event('input', { bubbles: true }));
+                addKeyBtn.click();
+                keyInput.value = ''; 
+                changed = true;
+            }
+        }
+
+        // 2. Inject FebBox Cookie automatically
         if (cookieInput && addCookieBtn && cookieList) {
-            if (!cookieList.innerText.includes(HARDCODED_FEBBOX_COOKIE.substring(0, 20))) { // Check first 20 chars to avoid mismatch
+            if (!cookieList.innerText.includes(HARDCODED_FEBBOX_COOKIE.substring(0, 20))) {
                 cookieInput.value = HARDCODED_FEBBOX_COOKIE;
+                cookieInput.dispatchEvent(new Event('input', { bubbles: true }));
                 addCookieBtn.click();
                 cookieInput.value = ''; 
+                changed = true;
             }
         }
-      }, 2000);
 
-      // 3. Auto-Select ALL Providers as Default
-      setTimeout(() => {
-        const providerMatrix = document.getElementById('providerMatrix');
-        if (providerMatrix) {
-          // Find all 'star' or 'default' buttons within the provider matrix and click them if they aren't already active
-          // Usually these plugins use SVGs or specific classes for the default toggle
-          const defaultButtons = providerMatrix.querySelectorAll('.provider-star, [data-action="default"], .star-icon, button[title*="Default"]');
-          
-          defaultButtons.forEach(btn => {
-            if (!btn.classList.contains('active') && !btn.classList.contains('is-default')) {
-               btn.click();
-            }
-          });
-          
-          // Also make sure all provider toggles (power buttons) are enabled
-          const powerButtons = providerMatrix.querySelectorAll('.provider-power, [data-action="toggle"], .power-icon, button[title*="Enable"]');
-          powerButtons.forEach(btn => {
-            if (!btn.classList.contains('active') && !btn.classList.contains('enabled')) {
-               btn.click();
-            }
-          });
+        // 3. Auto-Save if we made changes to push them to the server
+        if (changed && saveBtn && !saveBtn.disabled) {
+            setTimeout(() => {
+                saveBtn.click();
+                console.log("Auto-saved keys successfully!");
+                document.getElementById('localBackupWarn').style.display = 'none';
+            }, 1500); // Wait 1.5 seconds for the UI to register the keys before saving
         }
-      }, 2500); // Wait for index.js to render the matrix
 
-      // 4. Check for server wipe & restore from local backup
-      setTimeout(() => {
-        const serverOverrides = document.getElementById('overrideCfg').innerText;
-        const localBackup = localStorage.getItem('tmdb_config_backup');
-        
-        if ((serverOverrides.includes('(none)') || serverOverrides.includes('{}')) && localBackup) {
-          document.getElementById('localBackupWarn').style.display = 'block';
-          
-          try {
-            const parsedBackup = JSON.parse(localBackup);
-            
-            for (const [key, value] of Object.entries(parsedBackup)) {
-              const inputs = form.querySelectorAll(`[name="${key}"]`);
-              if (inputs.length > 0) {
-                inputs.forEach(input => {
-                  if (input.type === 'checkbox') {
-                    input.checked = value;
-                  } else if (input.type === 'radio') {
-                    if (input.value === value) input.checked = true;
-                  } else {
-                    input.value = value;
-                  }
-                });
-              }
-            }
-          } catch (e) {
-            console.error("Failed to restore local backup", e);
-          }
+        // Stop trying after 20 seconds to prevent infinite loops
+        if (attempts > 20) {
+            clearInterval(interval);
         }
-      }, 3000); 
-
-      // 5. When the user clicks Save, store a copy in LocalStorage
-      if (saveBtn) {
-        saveBtn.addEventListener('click', function() {
-          setTimeout(() => {
-            const formData = new FormData(form);
-            const data = {};
-            
-            formData.forEach((value, key) => {
-                data[key] = value;
-            });
-            
-            form.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-                data[cb.name] = cb.checked;
-            });
-            
-            form.querySelectorAll('input[type="radio"]:checked').forEach(rb => {
-                data[rb.name] = rb.value;
-            });
-
-            localStorage.setItem('tmdb_config_backup', JSON.stringify(data));
-            document.getElementById('localBackupWarn').style.display = 'none';
-          }, 500);
-        });
-      }
+      }, 1000);
     });
   </script>
 </body>
