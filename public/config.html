@@ -1,4 +1,6 @@
-<!DOCTYPE html><html lang="en"><head>
+<!DOCTYPE html>
+<html lang="en">
+<head>
   <meta charset="utf-8" />
   <title>TMDB Embed Admin</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -9,25 +11,24 @@
   <button class="burger" aria-label="Toggle navigation">☰</button>
   <div class="overlay"></div>
   <aside class="sidebar" id="sidebar">
-  <div class="brand">TMDB Embed API</div>
-  <nav class="nav">
-  <button class="nav-item" id="logoutBtn" data-action="logout">Logout</button>
-  <button class="nav-item" id="restartBtn" type="button">Restart Server</button>
-  <div class="nav-sep" role="separator" aria-hidden="true"></div>
-  <button class="nav-item" data-target="panel-status">Server Status</button>
-    <button class="nav-item" data-target="panel-core">Core</button>
-    <button class="nav-item" data-target="panel-quality">Quality / Filters</button>
-    <button class="nav-item" data-target="panel-keys">Keys</button>
-    <button class="nav-item" data-target="panel-febbox">FebBox / PStream</button>
-  <button class="nav-item" data-target="panel-advanced">Advanced</button>
-    <button class="nav-item" data-target="panel-live">Live Config</button>
+    <div class="brand">TMDB Embed API</div>
+    <nav class="nav">
+      <button class="nav-item" id="logoutBtn" data-action="logout">Logout</button>
+      <button class="nav-item" id="restartBtn" type="button">Restart Server</button>
+      <div class="nav-sep" role="separator" aria-hidden="true"></div>
+      <button class="nav-item" data-target="panel-status">Server Status</button>
+      <button class="nav-item" data-target="panel-core">Core</button>
+      <button class="nav-item" data-target="panel-quality">Quality / Filters</button>
+      <button class="nav-item" data-target="panel-keys">Keys</button>
+      <button class="nav-item" data-target="panel-febbox">FebBox / PStream</button>
+      <button class="nav-item" data-target="panel-advanced">Advanced</button>
+      <button class="nav-item" data-target="panel-live">Live Config</button>
       <div class="grow"></div>
     </nav>
     <footer class="side-footer">
       <a class="hint" style="margin-top: .5rem; color: var(--primary-fg);" href="https://github.com/Inside4ndroid" target="_blank">Github</a>
       <a class="hint" style="margin-top: .5rem; color: var(--primary-fg);"  href="https://x.com/Inside_4ndroid" target="_blank">X (Twitter)</a>
     </footer>
-  
     <footer class="side-footer">Credits to :<a class="hint" style="margin-top: .5rem; color: var(--primary-fg);" href="https://github.com/tapframe/NuvioStreamsAddon" target="_blank">NuvioStreamsAddon for Stremio</a></footer>
     <div class="bmc-widget-container" style="text-align: center;">
       <iframe src="https://github.com/sponsors/Inside4ndroid/button" title="Sponsor Inside4ndroid" height="32" width="114" style="border:0;border-radius:6px;margin-top:.5rem;"></iframe>
@@ -35,9 +36,15 @@
     <footer class="side-footer">Made with ❤️ by Inside4ndroid</footer>
   </aside>
   <main class="main">
-  <div id="bootWarn" class="alert warning" style="display:none;">No FEBBOX_COOKIES configured. Showbox / PStream streams may be unavailable.</div>
-  <div id="cacheDisabledBanner" class="alert info" style="display:none;">Cache is <strong>DISABLED</strong>; expect slower responses & higher source load.</div>
-  <div id="tmdbMissingBanner" class="alert warning" style="display:none;">No TMDB API Keys configured. Metadata-dependent providers (Showbox, 4khdhub) may degrade.</div>
+    <div id="bootWarn" class="alert warning" style="display:none;">No FEBBOX_COOKIES configured. Showbox / PStream streams may be unavailable.</div>
+    <div id="cacheDisabledBanner" class="alert info" style="display:none;">Cache is <strong>DISABLED</strong>; expect slower responses & higher source load.</div>
+    <div id="tmdbMissingBanner" class="alert warning" style="display:none;">No TMDB API Keys configured. Metadata-dependent providers (Showbox, 4khdhub) may degrade.</div>
+    
+    <!-- Add a banner for restored settings -->
+    <div id="localBackupWarn" class="alert warning" style="display:none; background: #ff9800; color: #000;">
+      <strong>Server Restarted!</strong> Your server settings were wiped. We have restored your settings from your browser's local backup. Scroll down and click <strong>Save Overrides</strong> to push them back to the server.
+    </div>
+
     <form id="cfgForm" onsubmit="return false;" class="panels">
       <section id="panel-status" class="panel">
         <h1>Server Status<button style="margin-left: 1rem;" id="refreshStatusBtn" type="button">Refresh Status</button></h1>
@@ -64,8 +71,8 @@
             <pre id="statusEndpoints" class="status-pre">loading...</pre>
           </div>
         </div>
-        
       </section>
+      
       <section id="panel-core" class="panel">
         <h1>Core Settings</h1>
         <div class="field"><label>API Port<p class="hint">Provider enable/disable & feature flags apply immediately. Click toggles to enable (highlighted) or disable (dim).</p><input type="text" name="port" placeholder="8787" /></label></div>
@@ -91,6 +98,7 @@
         </label>
         </div>
       </section>
+      
       <section id="panel-quality" class="panel">
         <h1>Quality & Filtering</h1>
         <div class="field quality-group"><label>Minimum Quality<p class="hint">Preset radios serialize to a simple string. Custom & advanced modes use the JSON fields.</p>
@@ -118,6 +126,7 @@
         <textarea name="excludeCodecsRaw" class="mini json-adv" placeholder='{"excludeDV":true,"excludeHDR":false}' disabled></textarea>
         </div>
       </section>
+      
       <section id="panel-keys" class="panel">
         <h1>API Keys</h1>
         <div class="field"><label>TMDB API Keys<p class="hint">Add multiple TMDB API keys. They rotate randomly per request to spread usage.</p>
@@ -128,8 +137,8 @@
           <div id="tmdbKeyList" class="key-list" aria-live="polite"></div>
           <input type="hidden" name="tmdbApiKeysHidden" />
         </label></div>
-        
       </section>
+      
       <section id="panel-febbox" class="panel">
         <h1>FebBox / PStream</h1>
         <p class="hint">ShowBox fetches content from a cloud storage provider called FebBox. Each FebBox user gets 100GB/month of fast streaming before speeds are reduced.</p>
@@ -142,41 +151,8 @@
           <div id="febboxCookieList" class="cookie-list" aria-live="polite"></div>
           <input type="hidden" name="febboxCookiesHidden" />
         </label></div>
-        <div class="field">
-  <label><strong>How to find your cookie</strong></label>
-</div>
-
-<ol class="hint">
-  <li>
-    <strong>Open Febbox.com</strong><br>
-    Go to https://febbox.com in your web browser.
-  </li>
-  <li>
-    <strong>Log in with Google</strong><br>
-    Use a Google account to log in to the Febbox site.<br>
-    <em>Tip:</em> For safety, it’s recommended to use a fresh account.
-  </li>
-  <li>
-    <strong>Open Developer Tools</strong><br>
-    Press the <kbd>F12</kbd> key on your keyboard.<br>
-    Alternatively, right-click anywhere on the page and select 
-    <code>Inspect</code> or <code>Inspect Element</code>.
-  </li>
-  <li>
-    <strong>Navigate to Cookies</strong><br>
-    In the Developer Tools panel, go to the <code>Application</code> tab.<br>
-    Expand the <code>Storage</code> section and click on <code>Cookies</code>.
-  </li>
-  <li>
-    <strong>Find the "ui" Cookie</strong><br>
-    In the list of cookies, look for the cookie with the name <code>ui</code>.
-  </li>
-  <li>
-    <strong>Copy the value</strong><br>
-    Copy the cookie value and paste it above then click add cookie.
-  </li>
-</ol>
       </section>
+      
       <section id="panel-advanced" class="panel">
         <h1>Advanced & Providers</h1>
         <p class="hint">These settings allow you to customize the behavior of the api and will effect timings.</p>
@@ -192,6 +168,7 @@
           <div class="field small"><label>Showbox Cache Dir <input type="text" name="adv_showboxCacheDir" placeholder="/data/showbox-cache"/></label></div>
         </div>
       </section>
+      
       <section id="panel-live" class="panel">
         <h1>Live Configuration</h1>
         <h2>Merged</h2>
@@ -202,6 +179,7 @@
         <pre id="overrideCfg">(none)</pre>
       </section>
     </form>
+    
     <div class="actions-bar">
       <button id="saveBtn" type="button" class="primary" disabled>Save Overrides</button>
       <button id="reloadBtn" type="button">Reload</button>
@@ -210,6 +188,7 @@
       <span id="validationSummary" class="validation-summary"></span>
     </div>
   </main>
+
   <!-- Confirmation Modal -->
   <div id="confirmReset" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="confirmResetTitle">
     <div class="modal-backdrop"></div>
@@ -228,12 +207,13 @@
       </div>
     </div>
   </div>
+
   <!-- Restart Confirmation Modal -->
   <div id="confirmRestart" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="confirmRestartTitle">
     <div class="modal-backdrop"></div>
     <div class="modal-window">
       <h3 id="confirmRestartTitle">Restart Server?</h3>
-      <p class="modal-text">This will stop the server process and attempt to restart it. Active requests will be interrupted. Make sure the app is managed by Docker, PM2, systemd, or another supervisor.</p>
+      <p class="modal-text">This will stop the server process and attempt to restart it. Active requests will be interrupted.</p>
       <ul class="modal-list">
         <li>Interrupts any in-flight API calls</li>
         <li>Server will exit and come back up</li>
@@ -245,4 +225,127 @@
       </div>
     </div>
   </div>
-</body></html>
+
+  <!-- AUTO-INJECT & BACKUP SCRIPT -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const form = document.getElementById('cfgForm');
+      const saveBtn = document.getElementById('saveBtn');
+      
+      // YOUR HARDCODED CREDENTIALS
+      const HARDCODED_TMDB_KEY = "9fca360bfe48e49cff3d54a1e29ab578";
+      const HARDCODED_FEBBOX_COOKIE = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3OTMzMzA4ODUsIm5iZiI6MTc5MzMzMDg4NSwiZXhwIjoxODI0NDM0OTA1LCJkYXRhIjp7InVpZCI6MjU1MjU3NiwidG9rZW4iOiIxOTliYzNhYTU0MDIyZmFjODQwMzcwNWUxZjkxYzJjMCJ9fQ.uliT3Yt2q0VuwhxDHwJrG4G9FY31U68DVrb5B3LpHcU";
+      
+      // 1. Auto-inject the TMDB key if it's missing
+      setTimeout(() => {
+        const keyInput = document.getElementById('tmdbKeyInput');
+        const addKeyBtn = document.getElementById('addTmdbKeyBtn');
+        const keyList = document.getElementById('tmdbKeyList');
+        
+        if (keyInput && addKeyBtn && keyList) {
+            if (!keyList.innerText.includes(HARDCODED_TMDB_KEY)) {
+                keyInput.value = HARDCODED_TMDB_KEY;
+                addKeyBtn.click();
+                keyInput.value = ''; 
+            }
+        }
+      }, 1500);
+
+      // 2. Auto-inject the FebBox Cookie if it's missing
+      setTimeout(() => {
+        const cookieInput = document.getElementById('febboxCookieInput');
+        const addCookieBtn = document.getElementById('addFebboxCookieBtn');
+        const cookieList = document.getElementById('febboxCookieList');
+        
+        if (cookieInput && addCookieBtn && cookieList) {
+            if (!cookieList.innerText.includes(HARDCODED_FEBBOX_COOKIE.substring(0, 20))) { // Check first 20 chars to avoid mismatch
+                cookieInput.value = HARDCODED_FEBBOX_COOKIE;
+                addCookieBtn.click();
+                cookieInput.value = ''; 
+            }
+        }
+      }, 2000);
+
+      // 3. Auto-Select ALL Providers as Default
+      setTimeout(() => {
+        const providerMatrix = document.getElementById('providerMatrix');
+        if (providerMatrix) {
+          // Find all 'star' or 'default' buttons within the provider matrix and click them if they aren't already active
+          // Usually these plugins use SVGs or specific classes for the default toggle
+          const defaultButtons = providerMatrix.querySelectorAll('.provider-star, [data-action="default"], .star-icon, button[title*="Default"]');
+          
+          defaultButtons.forEach(btn => {
+            if (!btn.classList.contains('active') && !btn.classList.contains('is-default')) {
+               btn.click();
+            }
+          });
+          
+          // Also make sure all provider toggles (power buttons) are enabled
+          const powerButtons = providerMatrix.querySelectorAll('.provider-power, [data-action="toggle"], .power-icon, button[title*="Enable"]');
+          powerButtons.forEach(btn => {
+            if (!btn.classList.contains('active') && !btn.classList.contains('enabled')) {
+               btn.click();
+            }
+          });
+        }
+      }, 2500); // Wait for index.js to render the matrix
+
+      // 4. Check for server wipe & restore from local backup
+      setTimeout(() => {
+        const serverOverrides = document.getElementById('overrideCfg').innerText;
+        const localBackup = localStorage.getItem('tmdb_config_backup');
+        
+        if ((serverOverrides.includes('(none)') || serverOverrides.includes('{}')) && localBackup) {
+          document.getElementById('localBackupWarn').style.display = 'block';
+          
+          try {
+            const parsedBackup = JSON.parse(localBackup);
+            
+            for (const [key, value] of Object.entries(parsedBackup)) {
+              const inputs = form.querySelectorAll(`[name="${key}"]`);
+              if (inputs.length > 0) {
+                inputs.forEach(input => {
+                  if (input.type === 'checkbox') {
+                    input.checked = value;
+                  } else if (input.type === 'radio') {
+                    if (input.value === value) input.checked = true;
+                  } else {
+                    input.value = value;
+                  }
+                });
+              }
+            }
+          } catch (e) {
+            console.error("Failed to restore local backup", e);
+          }
+        }
+      }, 3000); 
+
+      // 5. When the user clicks Save, store a copy in LocalStorage
+      if (saveBtn) {
+        saveBtn.addEventListener('click', function() {
+          setTimeout(() => {
+            const formData = new FormData(form);
+            const data = {};
+            
+            formData.forEach((value, key) => {
+                data[key] = value;
+            });
+            
+            form.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                data[cb.name] = cb.checked;
+            });
+            
+            form.querySelectorAll('input[type="radio"]:checked').forEach(rb => {
+                data[rb.name] = rb.value;
+            });
+
+            localStorage.setItem('tmdb_config_backup', JSON.stringify(data));
+            document.getElementById('localBackupWarn').style.display = 'none';
+          }, 500);
+        });
+      }
+    });
+  </script>
+</body>
+</html>
