@@ -6,11 +6,9 @@ const { config, saveConfigPatch, OVERRIDE_PATH } = require('./utils/config');
 const { authenticate, issueSession, requireAuth, getSession, updatePassword } = require('./utils/auth');
 const path = require('path');
 const { listProviders, getProvider, getCookieStats } = require('./providers/registry');
+const { createProxyRoutes, processStreamsForProxy } = require('./proxy/proxyServer'); // 👈 CORRECT PATH
 const { resolveImdbId } = require('./utils/tmdb');
 const { applyFilters } = require('./utils/streamFilters');
-
-// Load your proxy server
-const { createProxyRoutes, processStreamsForProxy } = require('./proxyServer');
 
 const app = express();
 app.set('trust proxy', 1);
