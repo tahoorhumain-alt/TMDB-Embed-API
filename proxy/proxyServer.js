@@ -51,25 +51,17 @@ function createProxyRoutes(app) {
 
                 let content = await response.text();
                 const urlObj = new URL(targetUrl);
-                // Get the base URL to resolve relative segment paths
                 const baseUrl = urlObj.origin + urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/') + 1);
 
                 const lines = content.split('\n');
                 const rewrittenLines = lines.map(line => {
                     const trimmed = line.trim();
+                    if (trimmed === '' || trimmed.startsWith('#')) return line; 
                     
-                    // Ignore empty lines and tags (like #EXTINF)
-                    if (trimmed === '' || trimmed.startsWith('#')) {
-                        return line; 
-                    }
-                    
-                    // It's a segment or sub-playlist URL. Resolve it to absolute first.
                     let absoluteUrl = trimmed;
                     if (!trimmed.startsWith('http')) {
                         absoluteUrl = new URL(trimmed, baseUrl).href;
                     }
-                    
-                    // Rewrite the segment to go back through our proxy
                     return `/proxy?url=${encodeURIComponent(absoluteUrl)}&referer=${encodeURIComponent(referer)}`;
                 });
 
@@ -89,13 +81,16 @@ function createProxyRoutes(app) {
             res.setHeader('Content-Type', 'video/mp4');
             
             // Spawn the static ffmpeg binary
+            // We explicitly decode ANY audio (including AAC/AC3/DTS) and output standard Stereo AAC
             const ffmpeg = spawn(ffmpegPath, [
-                '-headers', `Referer: ${referer}\r\n`, // Pass referer to upstream
+                '-headers', `Referer: ${referer}\r\n`,
                 '-i', targetUrl,
                 '-c:v', 'copy',          // Copy video track (no quality loss, fast)
-                '-c:a', 'aac',           // Convert audio to AAC (Fixes muted audio)
-                '-b:a', '192k',
-                '-movflags', 'frag_keyframe+empty_moov+default_base_moof', // Important for streaming
+                '-c:a', 'aac',           // Decode and convert audio to AAC
+                '-ac', '2',              // Downmix to 2 channels (Stereo) for mobile compatibility
+                '-ar', '44100',          // Standard sample rate
+                '-b:a', '192k',          // Audio bitrate
+                '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
                 '-f', 'mp4',
                 'pipe:1'
             ]);
@@ -123,7 +118,6 @@ function createProxyRoutes(app) {
         // C. BINARY STREAMING (MP4, WebM, etc.)
         // ---------------------------------------------------------
         try {
-            // Pass the Range header if the browser requests it (for seeking)
             if (req.headers.range) {
                 fetchOptions.headers['Range'] = req.headers.range;
             }
@@ -144,7 +138,6 @@ function createProxyRoutes(app) {
                 res.status(206);
             }
 
-            // Stream the body directly to the client
             response.body.pipe(res);
 
         } catch (err) {
@@ -156,7 +149,6 @@ function createProxyRoutes(app) {
 
 /**
  * Rewrites an array of stream objects to route through the proxy.
- * Used by the /api/streams endpoints in apiServer.js
  */
 function processStreamsForProxy(streams, serverUrl) {
     if (!Array.isArray(streams)) return streams;
@@ -164,12 +156,10 @@ function processStreamsForProxy(streams, serverUrl) {
     return streams.map(s => {
         if (!s || !s.url || typeof s.url !== 'string') return s;
         
-        // Don't proxy embed iframes (they won't work through a fetch proxy)
         if (s.url.includes('vidsrc') || s.url.includes('vidrift') || s.url.includes('embed') || s.isEmbed) {
             return s;
         }
         
-        // Route the stream through our proxy
         return { 
             ...s, 
             url: `${serverUrl}/proxy?url=${encodeURIComponent(s.url)}` 
@@ -177,5 +167,4 @@ function processStreamsForProxy(streams, serverUrl) {
     });
 }
 
-// Export the functions so apiServer.js can use them
 module.exports = { createProxyRoutes, processStreamsForProxy };
