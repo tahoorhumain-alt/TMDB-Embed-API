@@ -6,9 +6,11 @@ const { config, saveConfigPatch, OVERRIDE_PATH } = require('./utils/config');
 const { authenticate, issueSession, requireAuth, getSession, updatePassword } = require('./utils/auth');
 const path = require('path');
 const { listProviders, getProvider, getCookieStats } = require('./providers/registry');
-const { createProxyRoutes, processStreamsForProxy } = require('./proxy/proxyServer');
 const { resolveImdbId } = require('./utils/tmdb');
 const { applyFilters } = require('./utils/streamFilters');
+
+// Load your proxy server
+const { createProxyRoutes, processStreamsForProxy } = require('./proxyServer');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -18,7 +20,6 @@ app.set('trust proxy', 1);
 // =========================================================
 console.log('[startup] ✅ FORCING proxy routes to mount...');
 createProxyRoutes(app);
-// Force the flag to true so the stream processing later in this file works
 config.enableProxy = true; 
 
 // --- Simple In-Memory Rate Limiting for /auth/login ---
