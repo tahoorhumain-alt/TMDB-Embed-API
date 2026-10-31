@@ -70,9 +70,13 @@ function updatePassword(username, newPassword){
   }
 }
 
-// Session issuance & validation
-const SESSION_SECRET = crypto.randomBytes(32); // ephemeral; restart invalidates sessions
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h
+// --- MODIFIED SECTION ---
+// 1. Fixed Secret: This ensures you stay logged in even when Render restarts the server.
+// (Previously, this was randomBytes, which invalidated your login on every restart).
+const SESSION_SECRET = 'my_super_secret_fixed_key_1234567890_watchflix'; 
+
+// 2. Extended TTL: Set to 10 years (instead of 12 hours) so it never expires.
+const SESSION_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000; 
 
 function base64url(input){
   return Buffer.from(input).toString('base64').replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
