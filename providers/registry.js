@@ -20,7 +20,8 @@ const providerFunctionMap = {
   'netmirror.js': 'getNetmirrorStreams',
   'onetouchtv.js': 'getOnetouchtvStreams',
   'zxcstreams.js': 'getZxcstreamsStreams',
-  'netnaija.js': 'getNetNaijaStreams' // <--- ADDED NETNAIJA HERE
+  'netnaija.js': 'getNetNaijaStreams', // <--- ADDED NETNAIJA
+  'moviebox.js': 'getMovieBoxStreams'  // <--- ADDED MOVIEBOX
 };
 
 // Stats for debug endpoint
@@ -98,7 +99,7 @@ function createFetchFunction(providerInfo) {
         }
         global.currentRequestConfig = previousConfig || {};
       } else {
-        // Standard provider call
+        // Standard provider call (applies to MovieBox, NetNaija, and all others)
         result = await module[funcName](ctx.tmdbId, mediaType, ctx.season || null, ctx.episode || null);
       }
 
