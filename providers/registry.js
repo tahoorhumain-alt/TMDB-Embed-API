@@ -20,6 +20,7 @@ const providerFunctionMap = {
   'netmirror.js': 'getNetmirrorStreams',
   'onetouchtv.js': 'getOnetouchtvStreams',
   'zxcstreams.js': 'getZxcstreamsStreams',
+  'netnaija.js': 'getNetNaijaStreams' // <--- ADDED NETNAIJA HERE
 };
 
 // Stats for debug endpoint
@@ -121,11 +122,14 @@ const providerFiles = getProviderFiles();
 const providers = [];
 
 for (const providerInfo of providerFiles) {
-  providers.push({
-    name: providerInfo.name,
-    fetch: createFetchFunction(providerInfo)
-  });
-  console.log(`[registry] ${providerInfo.name} provider loaded`);
+  // Only load if it has a mapped function (prevents crashes on stray files)
+  if (providerInfo.functionName) {
+    providers.push({
+      name: providerInfo.name,
+      fetch: createFetchFunction(providerInfo)
+    });
+    console.log(`[registry] ${providerInfo.name} provider loaded`);
+  }
 }
 
 function isProviderEnabled(name) {
