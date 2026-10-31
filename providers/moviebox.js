@@ -1,44 +1,17 @@
 const https = require('https');
-const http = require('http');
-const crypto = require('crypto');
 
-// Helper for HTTPS requests
-function makeRequest(url, options = {}) {
+// Helper to make HTTP requests
+function makeRequest(url) {
     return new Promise((resolve, reject) => {
-        const urlObj = new URL(url);
-        const isHttps = urlObj.protocol === 'https:';
-        const httpModule = isHttps ? https : http;
-
-        const req = httpModule.request({
-            hostname: urlObj.hostname,
-            port: urlObj.port || (isHttps ? 443 : 80),
-            path: urlObj.pathname + urlObj.search,
-            method: options.method || 'GET',
-            headers: options.headers || {},
-            timeout: 15000
-        }, (res) => {
+        https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
-            res.on('end', () => resolve({ statusCode: res.statusCode, body: data, headers: res.headers }));
-        });
-
-        req.on('error', reject);
-        req.on('timeout', () => reject(new Error('Request timeout')));
-        
-        if (options.body) {
-            req.write(options.body);
-        }
-        req.end();
+            res.on('end', () => resolve({ statusCode: res.statusCode, body: data }));
+        }).on('error', reject);
     });
 }
 
-// Generate the required timestamp/md5 token
-function generateToken() {
-    const ts = Math.floor(Date.now() / 1000);
-    const md5 = crypto.createHash('md5').update(String(ts).split('').reverse().join('')).digest('hex');
-    return `${ts},${md5}`;
-}
-
+// Get TMDB Title
 async function getTMDBTitle(tmdbId, type) {
     let apiKey = process.env.TMDB_API_KEYS || process.env.TMDB_API_KEY;
     if (apiKey) {
@@ -46,13 +19,9 @@ async function getTMDBTitle(tmdbId, type) {
             const parsed = JSON.parse(apiKey);
             if (Array.isArray(parsed) && parsed.length > 0) apiKey = parsed[0];
             else if (typeof parsed === 'string') apiKey = parsed;
-        } catch(e) { /* string */ }
+        } catch(e) {}
     }
-
-    if (!apiKey) {
-        console.warn('[MovieBox] ❌ TMDB API key missing.');
-        return null;
-    }
+    if (!apiKey) return null;
 
     const tmdbType = type === 'tv' || type === 'series' ? 'tv' : 'movie';
     const url = `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${apiKey}`;
@@ -76,107 +45,67 @@ async function getMovieBoxStreams(tmdbId, type, season = 1, episode = 1) {
         const tmdbInfo = await getTMDBTitle(tmdbId, type);
         if (!tmdbInfo) return [];
 
-        console.log(`[MovieBox] 🔍 Searching for: "${tmdbInfo.title}" (${tmdbInfo.year})`);
-
-        const token = generateToken();
-        const headers = {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'Origin': 'https://moviebox.ph',
-            'Referer': 'https://moviebox.ph/',
-            'X-Request-Lang': 'en',
-            'X-Client-Info': '{"timezone":"Asia/Kolkata"}',
-            'X-Client-Token': token
-        };
-
-        // FIXED HOST: h5.aoneroom.com instead of h5-api
-        const searchHost = 'https://h5.aoneroom.com/wefeed-h5api-bff/subject/search';
+        // 1. Search your MovieBox API
+        const searchUrl = `https://moviebox-api-jwqw.onrender.com/search?q=${encodeURIComponent(tmdbInfo.title)}`;
+        console.log(`[MovieBox] 🔍 Searching: ${searchUrl}`);
         
-        const searchBody = JSON.stringify({ keyword: tmdbInfo.title, page: 1, perPage: 20 });
-        const searchRes = await makeRequest(searchHost, {
-            method: 'POST',
-            headers,
-            body: searchBody
-        });
-
-        if (searchRes.statusCode !== 200) {
-            console.error(`[MovieBox] ❌ Search API failed with status ${searchRes.statusCode}`);
-            console.log(`[MovieBox] Response: ${searchRes.body.substring(0, 200)}`);
-            return [];
-        }
-
+        const searchRes = await makeRequest(searchUrl);
         const searchData = JSON.parse(searchRes.body);
-        const items = searchData.data?.items || [];
+        const items = searchData.results || [];
         
         if (items.length === 0) {
             console.log('[MovieBox] ❌ No search results found.');
             return [];
         }
 
-        console.log(`[MovieBox] ✅ Found ${items.length} results. Top result: "${items[0].title}"`);
+        // 2. Find Best Match
+        let bestMatch = items.find(item => tmdbInfo.year && item.release_date?.includes(tmdbInfo.year)) || items[0];
+        console.log(`[MovieBox] 🎯 Selected match: "${bestMatch.title}" (ID: ${bestMatch.subject_id})`);
 
-        // Find Best Match
-        let bestMatch = items.find(item => tmdbInfo.year && item.title.includes(tmdbInfo.year)) || items[0];
-        console.log(`[MovieBox] 🎯 Selected match: "${bestMatch.title}"`);
+        let subjectId = bestMatch.subject_id;
+        if (!subjectId) return [];
 
-        let subjectId = bestMatch.subjectId;
-        let detailPath = bestMatch.detailPath;
-
-        if (!subjectId) {
-            console.log('[MovieBox] ❌ Subject ID missing.');
-            return [];
+        // 3. Fetch Stream
+        // Note: If it's a TV show, some wrappers require ?season=X&episode=Y at the end
+        let streamUrl = `https://moviebox-api-jwqw.onrender.com/api/stream/${subjectId}`;
+        if (type === 'tv' || type === 'series') {
+            streamUrl += `?season=${season}&episode=${episode}`;
         }
 
-        const se = (type === 'tv' || type === 'series') ? season : 0;
-        const ep = (type === 'tv' || type === 'series') ? episode : 0;
-
-        // FIXED HOST FOR PLAY URL
-        const playUrl = `https://h5.aoneroom.com/wefeed-h5api-bff/subject/play?subjectId=${subjectId}&se=${se}&ep=${ep}&detailPath=${encodeURIComponent(detailPath)}`;
-        
-        const playRes = await makeRequest(playUrl, { headers });
+        console.log(`[MovieBox] 🎬 Fetching stream: ${streamUrl}`);
+        const playRes = await makeRequest(streamUrl);
         
         if (playRes.statusCode !== 200) {
-            console.error(`[MovieBox] ❌ Play API failed with status ${playRes.statusCode}`);
-            console.log(`[MovieBox] Response: ${playRes.body.substring(0, 200)}`);
+            console.error(`[MovieBox] ❌ Stream API failed with status ${playRes.statusCode}`);
             return [];
         }
 
         const playData = JSON.parse(playRes.body);
-
+        
+        // 4. Format Streams
+        // (Assuming your API returns an array like playData.streams or playData.data)
+        // Adjust the mapping below based on what the /api/stream/ endpoint returns
         const streams = [];
-        const mbHeaders = {
-            'Referer': 'https://moviebox.ph/',
-            'Origin': 'https://moviebox.ph'
-        };
+        const rawStreams = playData.streams || playData.data || playData; 
 
-        if (playData.data?.streams && playData.data.streams.length > 0) {
-            console.log(`[MovieBox] ✅ Found ${playData.data.streams.length} streams!`);
-            playData.data.streams.forEach(stream => {
+        if (Array.isArray(rawStreams) && rawStreams.length > 0) {
+            console.log(`[MovieBox] ✅ Found ${rawStreams.length} streams!`);
+            rawStreams.forEach(stream => {
                 streams.push({
                     name: 'MovieBox',
                     title: `${bestMatch.title} \n ${stream.quality || 'HD'}`,
-                    url: stream.url,
-                    quality: stream.quality || '1080p',
+                    url: stream.url || stream.link, // Adjust based on API response
+                    quality: stream.quality || stream.resolution || '1080p',
                     provider: 'moviebox',
-                    headers: mbHeaders
-                });
-            });
-        } else if (playData.data?.hls && playData.data.hls.length > 0) {
-            console.log(`[MovieBox] ✅ Found ${playData.data.hls.length} HLS streams!`);
-            playData.data.hls.forEach(stream => {
-                streams.push({
-                    name: 'MovieBox',
-                    title: `${bestMatch.title} \n ${stream.quality || 'HD'}`,
-                    url: stream.url,
-                    quality: stream.quality || '1080p',
-                    provider: 'moviebox',
-                    headers: mbHeaders
+                    headers: {
+                        'Referer': 'https://moviebox.ph/',
+                        'Origin': 'https://moviebox.ph'
+                    }
                 });
             });
         } else {
-            console.log('[MovieBox] ❌ Play API returned no streams.');
-            console.log('[MovieBox Debug Play Data]:', JSON.stringify(playData).substring(0, 500));
+            console.log('[MovieBox] ❌ Stream API returned no streams.');
+            console.log('[MovieBox Debug]:', JSON.stringify(playData).substring(0, 200));
         }
 
         return streams;
