@@ -90,13 +90,21 @@ async function getMovieBoxStreams(tmdbId, type, season = 1, episode = 1) {
             'X-Client-Token': token
         };
 
-        // 1. Search MovieBox API
+        // FIXED HOST: h5.aoneroom.com instead of h5-api
+        const searchHost = 'https://h5.aoneroom.com/wefeed-h5api-bff/subject/search';
+        
         const searchBody = JSON.stringify({ keyword: tmdbInfo.title, page: 1, perPage: 20 });
-        const searchRes = await makeRequest('https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/search', {
+        const searchRes = await makeRequest(searchHost, {
             method: 'POST',
             headers,
             body: searchBody
         });
+
+        if (searchRes.statusCode !== 200) {
+            console.error(`[MovieBox] ❌ Search API failed with status ${searchRes.statusCode}`);
+            console.log(`[MovieBox] Response: ${searchRes.body.substring(0, 200)}`);
+            return [];
+        }
 
         const searchData = JSON.parse(searchRes.body);
         const items = searchData.data?.items || [];
@@ -106,7 +114,9 @@ async function getMovieBoxStreams(tmdbId, type, season = 1, episode = 1) {
             return [];
         }
 
-        // 2. Find Best Match (Prioritizing Year)
+        console.log(`[MovieBox] ✅ Found ${items.length} results. Top result: "${items[0].title}"`);
+
+        // Find Best Match
         let bestMatch = items.find(item => tmdbInfo.year && item.title.includes(tmdbInfo.year)) || items[0];
         console.log(`[MovieBox] 🎯 Selected match: "${bestMatch.title}"`);
 
@@ -121,10 +131,17 @@ async function getMovieBoxStreams(tmdbId, type, season = 1, episode = 1) {
         const se = (type === 'tv' || type === 'series') ? season : 0;
         const ep = (type === 'tv' || type === 'series') ? episode : 0;
 
-        // 3. Fetch Play URL
-        const playUrl = `https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/play?subjectId=${subjectId}&se=${se}&ep=${ep}&detailPath=${encodeURIComponent(detailPath)}`;
+        // FIXED HOST FOR PLAY URL
+        const playUrl = `https://h5.aoneroom.com/wefeed-h5api-bff/subject/play?subjectId=${subjectId}&se=${se}&ep=${ep}&detailPath=${encodeURIComponent(detailPath)}`;
         
         const playRes = await makeRequest(playUrl, { headers });
+        
+        if (playRes.statusCode !== 200) {
+            console.error(`[MovieBox] ❌ Play API failed with status ${playRes.statusCode}`);
+            console.log(`[MovieBox] Response: ${playRes.body.substring(0, 200)}`);
+            return [];
+        }
+
         const playData = JSON.parse(playRes.body);
 
         const streams = [];
@@ -133,7 +150,6 @@ async function getMovieBoxStreams(tmdbId, type, season = 1, episode = 1) {
             'Origin': 'https://moviebox.ph'
         };
 
-        // 4. Extract Streams
         if (playData.data?.streams && playData.data.streams.length > 0) {
             console.log(`[MovieBox] ✅ Found ${playData.data.streams.length} streams!`);
             playData.data.streams.forEach(stream => {
@@ -160,7 +176,7 @@ async function getMovieBoxStreams(tmdbId, type, season = 1, episode = 1) {
             });
         } else {
             console.log('[MovieBox] ❌ Play API returned no streams.');
-            console.log('[MovieBox Debug]:', JSON.stringify(playData));
+            console.log('[MovieBox Debug Play Data]:', JSON.stringify(playData).substring(0, 500));
         }
 
         return streams;
