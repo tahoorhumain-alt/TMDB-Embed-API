@@ -1,45 +1,58 @@
 /* eslint-env browser */
 (function(){
   const $ = sel => document.querySelector(sel);
+  
+  // --- ADD YOUR CREDENTIALS HERE ---
+  const AUTO_USER = 'admin'; 
+  const AUTO_PASS = 'change-me'; 
+  // ---------------------------------
+
   async function checkSession(){
     try {
       const r = await fetch('/auth/session');
       const j = await r.json();
       if (j.authenticated) {
         window.location.href = '/config.html';
+      } else {
+        // IF NOT LOGGED IN, TRY AUTO-LOGIN
+        if (AUTO_USER && AUTO_PASS && AUTO_PASS !== 'your_actual_password_here') {
+          login(AUTO_USER, AUTO_PASS);
+        }
       }
-    } catch(e) { /* ignore */ }
+    } catch(e) { 
+        // If fetch fails (e.g. server is waking up), wait 3 seconds and try again
+        setTimeout(checkSession, 3000); 
+    }
   }
 
   async function login(username, password){
     const status = $('#status');
-    status.textContent = 'Authenticating...';
-    status.className = 'status';
+    if(status) {
+        status.textContent = 'Auto-Authenticating...';
+        status.className = 'status';
+    }
+    
     try {
       const r = await fetch('/auth/login', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ username, password }) });
       const j = await r.json();
+      
       if (!j.success) {
-        if (j.error === 'LOCKED' || j.error === 'TOO_MANY_ATTEMPTS') {
-          showLockout(j.retryAfter);
-          status.textContent = 'Locked due to excessive attempts';
-        } else if (j.error === 'INVALID_CREDENTIALS') {
-          status.textContent = 'Invalid credentials';
-          if (typeof j.remaining === 'number') {
-            status.textContent += ` (${j.remaining} attempts left)`;
-          }
-        } else {
-          status.textContent = j.error || 'Login failed';
+        if(status) {
+            status.textContent = 'Auto-login failed: ' + (j.error || 'Unknown');
+            status.classList.add('error');
         }
-        status.classList.add('error');
         return false;
       }
-      status.textContent = 'Success! Redirecting...';
-      status.classList.add('success');
+      
+      if(status) {
+        status.textContent = 'Success! Redirecting...';
+        status.classList.add('success');
+      }
       setTimeout(()=>{ window.location.href = '/config.html'; }, 400);
       return true;
     } catch (e) {
-      status.textContent = 'Network error';
-      status.classList.add('error');
+      // Network error, retry in 3 seconds
+      setTimeout(() => login(username, password), 3000);
       return false;
     }
   }
@@ -50,6 +63,7 @@
     if (!retryAfterSeconds || retryAfterSeconds <= 0) return;
     const banner = $('#lockoutBanner');
     const countdownEl = $('#lockoutCountdown');
+    if(!banner || !countdownEl) return;
     banner.style.display = 'block';
     const end = Date.now() + (retryAfterSeconds * 1000);
     if (lockoutTimer) clearInterval(lockoutTimer);
@@ -70,6 +84,7 @@
 
   async function changePassword(oldPassword, newPassword){
     const pwStatus = $('#pwStatus');
+    if(!pwStatus) return;
     pwStatus.textContent = 'Updating...';
     pwStatus.className = 'status';
     try {
@@ -90,38 +105,50 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    // Flash messaging based on query params
     const params = new URLSearchParams(location.search);
     const status = $('#status');
-    if(params.has('loggedOut')) { status.textContent = 'Logged out successfully'; status.classList.add('success'); }
-    else if(params.has('expired')) { status.textContent = 'Session expired. Please login again.'; status.classList.add('error'); }
-    if(params.has('loggedOut') || params.has('expired')) {
-      // Remove params from URL without reloading
-      history.replaceState(null,'', location.pathname);
+    
+    if(status) {
+        if(params.has('loggedOut')) { status.textContent = 'Logged out successfully'; status.classList.add('success'); }
+        else if(params.has('expired')) { status.textContent = 'Session expired. Attempting auto-login...'; status.classList.add('error'); }
+        if(params.has('loggedOut') || params.has('expired')) {
+          history.replaceState(null,'', location.pathname);
+        }
     }
+    
+    // Start the auto-check/auto-login process
     checkSession();
-    $('#loginForm').addEventListener('submit', e => {
-      e.preventDefault();
-      const u = $('#username').value.trim();
-      const p = $('#password').value;
-      if (!u || !p) return;
-      login(u,p);
-    });
-    $('#togglePw').addEventListener('click', () => {
-      const chg = $('#pwChange');
-      const visible = chg.style.display === 'block';
-      chg.style.display = visible ? 'none' : 'block';
-    });
-    $('#pwForm').addEventListener('submit', e => {
-      e.preventDefault();
-      const oldPw = $('#oldPw').value;
-      const newPw = $('#newPw').value;
-      if (newPw.length < 8) {
-        $('#pwStatus').textContent = 'Password too short';
-        $('#pwStatus').classList.add('error');
-        return;
-      }
-      changePassword(oldPw, newPw);
-    });
+
+    if($('#loginForm')) {
+        $('#loginForm').addEventListener('submit', e => {
+          e.preventDefault();
+          const u = $('#username').value.trim();
+          const p = $('#password').value;
+          if (!u || !p) return;
+          login(u,p);
+        });
+    }
+    
+    if($('#togglePw')) {
+        $('#togglePw').addEventListener('click', () => {
+          const chg = $('#pwChange');
+          const visible = chg.style.display === 'block';
+          chg.style.display = visible ? 'none' : 'block';
+        });
+    }
+    
+    if($('#pwForm')) {
+        $('#pwForm').addEventListener('submit', e => {
+          e.preventDefault();
+          const oldPw = $('#oldPw').value;
+          const newPw = $('#newPw').value;
+          if (newPw.length < 8) {
+            $('#pwStatus').textContent = 'Password too short';
+            $('#pwStatus').classList.add('error');
+            return;
+          }
+          changePassword(oldPw, newPw);
+        });
+    }
   });
 })();
