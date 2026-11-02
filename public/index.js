@@ -313,26 +313,19 @@ function openConfirmRestart(){
 async function clearAll(){
 	const confirmed = await openConfirmReset();
 	if(!confirmed) return;
-	// To truly reset to app defaults, we must:
-	// - Explicitly clear arrays so env fallbacks don't persist
-	// - Set boolean flags to their default values (rather than null)
-	// - Null legacy single TMDB key
 	const payload = {
 		port: null,
 		defaultRegion: null,
 		defaultProviders: [],
 		minQualitiesRaw: 'all',
 		excludeCodecsRaw: JSON.stringify({excludeDV:false,excludeHDR:false}),
-		// Explicit empty arrays ensure override wins over any prior env mirror
 		febboxCookies: [],
 		tmdbApiKeys: [],
 		tmdbApiKey: null,
-		// Provider enable flags default to true
 		enableShowboxProvider: true,
 		enable4khdhubProvider: true,
 		enableVixsrcProvider: true,
 		enableProxy: false,
-		// Other defaults
 		disableCache: false,
 		enablePStreamApi: true,
 		disableUrlValidation: false,
@@ -346,7 +339,6 @@ async function clearAll(){
 		if(!js.success) throw new Error(js.error||'Clear failed');
 		setStatus('All settings reset to defaults');
 		fillForm(js);
-		// Re-render provider matrix immediately so toggles reflect defaults without page refresh
 		try { renderProviderMatrix(js.merged); } catch {}
 		validate();
 	} catch(e){ setStatus(e.message,true); }
@@ -389,13 +381,6 @@ function bindShellControls(){
 	if(burger) burger.addEventListener('click', ()=> toggleSidebar());
 	const overlay = document.querySelector('.overlay');
 	if(overlay) overlay.addEventListener('click', ()=> toggleSidebar(false));
-}
-async function verifySession(){
-	try {
-		const r = await fetch('/auth/session',{cache:'no-store'});
-		const j = await r.json();
-		if(!j.authenticated){ location.replace('/?expired=1'); }
-	} catch { location.replace('/?expired=1'); }
 }
 
 async function loadServerStatus(){
@@ -503,7 +488,6 @@ document.addEventListener('DOMContentLoaded', ()=> {
 	if(logoutBtn){
 		logoutBtn.addEventListener('click', async ()=>{
 			try { await fetch('/auth/logout',{method:'POST'}); } catch {}
-			// Use replace to avoid creating extra history entry
 			location.replace('/?loggedOut=1');
 		});
 	}
@@ -516,7 +500,6 @@ document.addEventListener('DOMContentLoaded', ()=> {
 			try {
 				const r = await fetch('/api/restart',{ method:'POST' });
 				if(!r.ok){ const t = await r.text().catch(()=>r.statusText); throw new Error(t||('HTTP '+r.status)); }
-				// Server will shut down soon; start polling until it comes back
 				await new Promise(resolve => setTimeout(resolve, 1000));
 				const start = Date.now();
 				const timeoutMs = 60_000;
@@ -534,11 +517,6 @@ document.addEventListener('DOMContentLoaded', ()=> {
 	reload();
 	const h = location.hash.slice(1);
 	navTo(h||'panel-core');
-	// Revalidate session on back-forward cache navigation or visibility
-	window.addEventListener('pageshow', (e)=>{
-		if(e.persisted){ verifySession(); }
-	});
-	document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') verifySession(); });
 	// Advanced flag checkbox change -> validation
 	document.getElementById('advFlags')?.addEventListener('change', (e)=>{
 		if(e.target.matches('.adv-flag-item input[type="checkbox"]')) {
