@@ -6,7 +6,7 @@ const { config, saveConfigPatch, OVERRIDE_PATH } = require('./utils/config');
 const { authenticate, issueSession, requireAuth, getSession, updatePassword } = require('./utils/auth');
 const path = require('path');
 const { listProviders, getProvider, getCookieStats } = require('./providers/registry');
-const { createProxyRoutes, processStreamsForProxy } = require('./proxy/proxyServer'); // 👈 CORRECT PATH
+const { createProxyRoutes, processStreamsForProxy } = require('./proxy/proxyServer'); 
 const { resolveImdbId } = require('./utils/tmdb');
 const { applyFilters } = require('./utils/streamFilters');
 
@@ -102,7 +102,7 @@ app.post('/auth/login', (req,res) => {
   }
   recordLoginSuccess(ip);
   const token = issueSession(username);
-  res.setHeader('Set-Cookie', `session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${12*60*60}`);
+  res.setHeader('Set-Cookie', `session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${10 * 365 * 24 * 60 * 60}`);
   res.json({ success:true, username });
 });
 
@@ -127,9 +127,10 @@ app.post('/auth/change-password', requireAuth, (req,res) => {
   res.json({ success:true, message:'PASSWORD_UPDATED' });
 });
 
+// --- BYPASSED AUTH: Admin Panel ---
 app.get('/config.html', (req,res,next) => {
-  const sess = getSession(req);
-  if (!sess) return res.redirect(302, '/');
+  // const sess = getSession(req);
+  // if (!sess) return res.redirect(302, '/');
   res.setHeader('Cache-Control','no-store, must-revalidate');
   res.setHeader('Pragma','no-cache');
   res.setHeader('Expires','0');
@@ -174,7 +175,11 @@ app.get('/api/config', (req,res) => {
   try { if (fs.existsSync(OVERRIDE_PATH)) override = JSON.parse(fs.readFileSync(OVERRIDE_PATH,'utf8')); } catch (e) {}
   res.json({ success:true, merged: config, override, overridePath: OVERRIDE_PATH });
 });
+
+// --- BYPASSED AUTH: Config Save ---
 app.post('/api/config', (req,res) => {
+  // const sess = getSession(req);
+  // if(!sess) return res.status(401).json({ success:false, error:'UNAUTHORIZED' });
   const patch = req.body || {};
   if (patch.port) {
     const p = Number(patch.port); if (!Number.isFinite(p) || p<=0 || p>65535) return res.status(400).json({ success:false, error:'INVALID_PORT'});
@@ -185,9 +190,10 @@ app.post('/api/config', (req,res) => {
   res.json({ success: ok, merged: config });
 });
 
+// --- BYPASSED AUTH: Restart Server ---
 app.post('/api/restart', (req,res) => {
-  const sess = getSession(req);
-  if(!sess) return res.status(401).json({ success:false, error:'UNAUTHORIZED' });
+  // const sess = getSession(req);
+  // if(!sess) return res.status(401).json({ success:false, error:'UNAUTHORIZED' });
   res.json({ success:true, message:'RESTARTING' });
   setTimeout(()=>{
     try {
@@ -247,7 +253,12 @@ app.get('/api/streams/:type/:tmdbId', async (req,res) => {
     metrics.streamRequests++;
     const tmdbType = type === 'movie' ? 'movie' : 'tv';
     const imdbId = await resolveImdbId(tmdbType, tmdbId); if (imdbId) metrics.tmdbToImdbLookups++;
-    const selectedProviders = (config.defaultProviders.length ? config.defaultProviders : listProviders().map(p=>p.name));
+    
+    // =========================================================
+    // CHANGE: FORCE ALL PROVIDERS TO BE USED (IGNORES CONFIG)
+    // =========================================================
+    const selectedProviders = listProviders().map(p=>p.name);
+    
     const providerTimings = {};
     const results = await Promise.all(selectedProviders.map(async name => {
       const prov = getProvider(name);
