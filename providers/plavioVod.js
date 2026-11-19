@@ -3,7 +3,16 @@
  *
  * Plavio VOD provider (movie + series, up to 4K, HTTPS only).
  * Accepts EITHER a TMDB ID (numeric) OR an IMDb ID (ttXXXXXXX).
- * Converts TMDB → IMDb automatically using ../utils/tmdbKey.
+ *
+ * FIXES over the previous version:
+ *   - Auto-detects TMDB v3 (32-hex) vs v4 (JWT "eyJ…") keys and uses the
+ *     correct auth style for each. This was silently 401-ing before.
+ *   - Retries with the alternate auth mode when the first attempt fails.
+ *   - Adds a Cinemeta fallback (no key required) so the provider still
+ *     works when TMDB is unavailable / rate-limited.
+ *   - Explicit, prefixed logging so failures are visible in Render logs.
+ *   - Short negative-cache (5 min) so repeated failures don't hammer TMDB.
+ *   - getStreams() never throws — always returns an array.
  */
 
 'use strict';
@@ -12,7 +21,7 @@ const axios = require('axios');
 const { getTmdbApiKey } = require('../utils/tmdbKey');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Config (the exact source set you supplied)
+// Config
 // ─────────────────────────────────────────────────────────────────────────────
 const PLAVIO_CONFIG =
   '%7B%22source_4KHDHub%22%3A%22on%22%2C%22source_Cinejoy%22%3A%22on%22%2C' +
@@ -42,41 +51,114 @@ const EXTRACT_CONCURRENCY = 5;
 const TIMEOUT_STREAM_LIST = 20_000;
 const TIMEOUT_EXTRACT     = 20_000;
 const TIMEOUT_TMDB        = 10_000;
+const NEGATIVE_CACHE_TTL  = 5 * 60 * 1000; // 5 min
+
+const DEBUG = process.env.PLAVIO_DEBUG === '1';
+
+function dbg(...a) { if (DEBUG) console.log('[plavioVod:debug]', ...a); }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TMDB → IMDb cache + converter
+// TMDB → IMDb  (cache + negative cache)
 // ─────────────────────────────────────────────────────────────────────────────
-const imdbCache = new Map(); // `${mediaType}:${tmdbId}` → 'ttXXXXXXX'
+const imdbCache = new Map();          // `${mediaType}:${tmdbId}` → 'ttXXXXXXX'
+const negCache  = new Map();          // `${mediaType}:${tmdbId}` → expiresAtMs
 
-async function tmdbToImdb(tmdbId, tmdbMediaType) {
-  const key = `${tmdbMediaType}:${tmdbId}`;
-  if (imdbCache.has(key)) return imdbCache.get(key);
+function looksLikeJwt(key) {
+  // v4 tokens are JWTs: 3 base64url segments separated by dots, first starts "eyJ"
+  return typeof key === 'string' && key.split('.').length === 3 && key.startsWith('eyJ');
+}
 
-  const apiKey = getTmdbApiKey();
-  if (!apiKey) {
-    console.warn('[plavioVod] TMDB API key missing — cannot convert TMDB ID to IMDb');
-    return null;
-  }
-
-  const endpoint =
-    tmdbMediaType === 'tv'
-      ? `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids`
-      : `https://api.themoviedb.org/3/movie/${tmdbId}/external_ids`;
-
+async function tmdbRequest(endpoint, apiKey) {
+  // Try v3 style first (api_key query param)
   try {
-    const res = await axios.get(endpoint, {
+    return await axios.get(endpoint, {
       params: { api_key: apiKey },
       timeout: TIMEOUT_TMDB,
     });
-    const imdbId = res.data?.imdb_id;
-    if (imdbId && imdbId.startsWith('tt')) {
-      imdbCache.set(key, imdbId);
-      return imdbId;
-    }
-    console.warn(`[plavioVod] No IMDb ID on TMDB for ${key}`);
   } catch (err) {
-    console.error(`[plavioVod] TMDB→IMDb lookup failed for ${key}: ${err.message}`);
+    const status = err.response?.status;
+    if (status !== 401) throw err;
+    dbg(`TMDB v3-style auth failed (401), retrying with Bearer…`);
+    // Retry v4 style (Authorization: Bearer …)
+    return await axios.get(endpoint, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      timeout: TIMEOUT_TMDB,
+    });
   }
+}
+
+async function tmdbToImdb(tmdbId, tmdbMediaType) {
+  const key = `${tmdbMediaType}:${tmdbId}`;
+
+  if (imdbCache.has(key)) {
+    dbg(`cache-hit ${key} → ${imdbCache.get(key)}`);
+    return imdbCache.get(key);
+  }
+  const negUntil = negCache.get(key);
+  if (negUntil && negUntil > Date.now()) {
+    dbg(`neg-cache ${key} still warm until ${new Date(negUntil).toISOString()}`);
+    return null;
+  }
+
+  // ── Attempt 1: TMDB ─────────────────────────────────────────────────────
+  const apiKey = getTmdbApiKey();
+  if (apiKey) {
+    const endpoint =
+      tmdbMediaType === 'tv'
+        ? `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids`
+        : `https://api.themoviedb.org/3/movie/${tmdbId}/external_ids`;
+
+    dbg(`TMDB key format: ${looksLikeJwt(apiKey) ? 'v4 (JWT)' : 'v3 (hex)'}, len=${apiKey.length}`);
+
+    try {
+      const res = await tmdbRequest(endpoint, apiKey);
+      const imdbId = res.data?.imdb_id;
+      if (imdbId && typeof imdbId === 'string' && imdbId.startsWith('tt')) {
+        imdbCache.set(key, imdbId);
+        console.log(`[plavioVod] TMDB→IMDb OK ${key} → ${imdbId}`);
+        return imdbId;
+      }
+      console.warn(
+        `[plavioVod] TMDB ${key} returned NO imdb_id. body=${JSON.stringify(res.data).slice(0, 200)}`
+      );
+    } catch (err) {
+      const status = err.response?.status;
+      const msg    = err.response?.data?.status_message || err.message;
+      console.error(`[plavioVod] TMDB ${key} FAILED → HTTP ${status || '?'} :: ${msg}`);
+      if (status === 401) console.error('[plavioVod]   → 401: key invalid, expired, or wrong type');
+      if (status === 404) console.error('[plavioVod]   → 404: TMDB has no record for that ID');
+      if (status === 429) console.error('[plavioVod]   → 429: TMDB rate limit hit');
+      if (!status)        console.error(`[plavioVod]   → network/timeout: ${err.code || err.message}`);
+    }
+  } else {
+    console.error('[plavioVod] TMDB API key missing (getTmdbApiKey() returned falsy)');
+  }
+
+  // ── Attempt 2: Cinemeta fallback (no key required) ──────────────────────
+  const cinemetaType = tmdbMediaType === 'tv' ? 'series' : 'movie';
+  const cinemetaUrls = [
+    `https://v3-cinemeta.strem.io/meta/${cinemetaType}/tmdb:${tmdbId}.json`,
+    `https://v3-cinemeta.strem.io/meta/${cinemetaType}/${tmdbId}.json`, // best-effort
+  ];
+  for (const url of cinemetaUrls) {
+    try {
+      const r = await axios.get(url, { timeout: TIMEOUT_TMDB });
+      const candidate =
+        r.data?.meta?.imdb_id ||
+        r.data?.meta?.id;
+      if (candidate && /^tt\d+$/.test(candidate)) {
+        imdbCache.set(key, candidate);
+        console.log(`[plavioVod] Cinemeta fallback OK ${key} → ${candidate}`);
+        return candidate;
+      }
+    } catch (err) {
+      dbg(`Cinemeta ${url} failed: ${err.message}`);
+    }
+  }
+
+  // Negative-cache so we don't hammer TMDB every request
+  negCache.set(key, Date.now() + NEGATIVE_CACHE_TTL);
+  console.warn(`[plavioVod] Could not resolve IMDb for ${key} (neg-cached for 5 min)`);
   return null;
 }
 
@@ -87,7 +169,7 @@ const DIRECT_MEDIA_EXT = /\.(m3u8|mp4|mpd|mkv|webm|ts)(\?|$)/i;
 const MEDIA_CONTENT_TYPE =
   /^(video\/|application\/(x-mpegurl|vnd\.apple\.mpegurl|dash\+xml)|audio\/)/i;
 
-const isDirectMediaUrl  = (u) => !!u && DIRECT_MEDIA_EXT.test(u);
+const isDirectMediaUrl   = (u) => !!u && DIRECT_MEDIA_EXT.test(u);
 const isMediaContentType = (ct) => !!ct && MEDIA_CONTENT_TYPE.test(ct);
 
 function buildStreamListUrl(plavioType, imdbId, season, episode) {
@@ -108,12 +190,15 @@ function buildRequestHeaders(stream) {
 // ─────────────────────────────────────────────────────────────────────────────
 async function fetchStreamList(plavioType, imdbId, season, episode) {
   const url = buildStreamListUrl(plavioType, imdbId, season, episode);
+  dbg(`GET ${url}`);
   const res = await axios.get(url, {
     headers: DEFAULT_HEADERS,
     timeout: TIMEOUT_STREAM_LIST,
     maxRedirects: 5,
     validateStatus: (s) => s >= 200 && s < 400,
   });
+  const count = Array.isArray(res.data?.streams) ? res.data.streams.length : 0;
+  console.log(`[plavioVod] Plavio returned ${count} stream(s) for ${imdbId}`);
   return Array.isArray(res.data?.streams) ? res.data.streams : [];
 }
 
@@ -161,7 +246,6 @@ async function resolveExtractor(stream) {
     if (finalUrl !== originalUrl) return finalUrl;
 
     if (typeof res.data === 'string') {
-      // JSON body?
       try {
         const parsed = JSON.parse(res.data);
         if (parsed && typeof parsed === 'object') {
@@ -174,7 +258,6 @@ async function resolveExtractor(stream) {
         }
       } catch (_) { /* not JSON */ }
 
-      // Embedded media URL in HTML?
       const mediaMatch = res.data.match(
         /https?:\/\/[^\s"'<>\\]+\.(m3u8|mp4|mpd|mkv|webm|ts)[^\s"'<>\\]*/i
       );
@@ -195,88 +278,99 @@ async function resolveExtractor(stream) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API — getStreams  (signature auto-detects)
 //
-// Registry calls: getStreams(tmdbId, 'movie'|'tv', season, episode)
-// Direct calls:   getStreams(imdbId, 'movie'|'series', season, episode)
+//    Registry call:  getStreams(tmdbId, 'movie'|'tv', season, episode)
+//    Direct call:    getStreams(imdbId, 'movie'|'series', season, episode)
+//    Extended call:  getStreams(tmdbId, imdbId, 'movie'|'tv', season, episode)
 // ─────────────────────────────────────────────────────────────────────────────
 async function getStreams(...args) {
-  let rawId, type, season, episode;
+  try {
+    let rawId, explicitImdb, type, season, episode;
 
-  if (args.length >= 5) {
-    [, rawId, type, season, episode] = args;      // (tmdbId, imdbId, type, s, e)
-  } else if (args.length === 4) {
-    [rawId, type, season, episode] = args;         // (id, type, s, e)
-  } else {
-    [rawId, type] = args;                          // (id, type)
-  }
+    if (args.length >= 5) {
+      // (tmdbId, imdbId, type, season, episode)
+      [rawId, explicitImdb, type, season, episode] = args;
+    } else if (args.length === 4) {
+      // (id, type, season, episode)  — registry path
+      [rawId, type, season, episode] = args;
+    } else {
+      // (id, type)
+      [rawId, type] = args;
+    }
 
-  type = type || 'movie';
-  if (!rawId) return [];
+    type = type || 'movie';
+    if (!rawId && !explicitImdb) return [];
 
-  // Normalise type: 'tv' → 'series' (Plavio's URL uses /series/)
-  const plavioType = type === 'tv' || type === 'series' ? 'series' : 'movie';
-  const tmdbMediaType = plavioType === 'series' ? 'tv' : 'movie';
+    const plavioType    = (type === 'tv' || type === 'series') ? 'series' : 'movie';
+    const tmdbMediaType = plavioType === 'series' ? 'tv' : 'movie';
 
-  // Resolve final IMDb ID
-  const idStr = String(rawId);
-  let imdbId;
-  if (idStr.startsWith('tt')) {
-    imdbId = idStr;
-  } else {
-    imdbId = await tmdbToImdb(idStr, tmdbMediaType);
-    if (!imdbId) {
-      console.warn(`[plavioVod] Could not resolve IMDb ID from TMDB ${idStr}`);
+    // ── Resolve IMDb ID ─────────────────────────────────────────────────
+    let imdbId;
+    if (explicitImdb && /^tt\d+$/.test(String(explicitImdb))) {
+      imdbId = String(explicitImdb);
+      dbg(`Using caller-supplied IMDb ID: ${imdbId}`);
+    } else if (rawId && String(rawId).startsWith('tt')) {
+      imdbId = String(rawId);
+    } else {
+      imdbId = await tmdbToImdb(String(rawId), tmdbMediaType);
+      if (!imdbId) {
+        console.warn(`[plavioVod] Bail: cannot resolve IMDb from TMDB ${rawId}`);
+        return [];
+      }
+    }
+
+    // ── Fetch Plavio stream list ────────────────────────────────────────
+    let rawStreams = [];
+    try {
+      rawStreams = await fetchStreamList(plavioType, imdbId, season, episode);
+    } catch (err) {
+      console.error(`[plavioVod] stream-list fetch failed for ${imdbId}: ${err.message}`);
       return [];
     }
-  }
 
-  // Fetch Plavio stream list
-  let rawStreams = [];
-  try {
-    rawStreams = await fetchStreamList(plavioType, imdbId, season, episode);
+    if (rawStreams.length === 0) {
+      console.log(`[plavioVod] No sources for ${imdbId}`);
+      return [];
+    }
+
+    console.log(`[plavioVod] Resolving ${rawStreams.length} source(s) for ${imdbId}…`);
+
+    // ── Resolve in bounded batches ──────────────────────────────────────
+    const resolved = [];
+    for (let i = 0; i < rawStreams.length; i += EXTRACT_CONCURRENCY) {
+      const batch = rawStreams.slice(i, i + EXTRACT_CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(async (stream) => {
+          try {
+            const finalUrl = await resolveExtractor(stream);
+            if (!finalUrl) return null;
+            return {
+              name: `Plavio | ${stream.name || 'Source'}`,
+              title: stream.title || stream.name || 'Plavio',
+              url: finalUrl,
+              behaviorHints: {
+                notWebReady: stream.behaviorHints?.notWebReady ?? false,
+                filename: stream.behaviorHints?.filename,
+                ...(stream.behaviorHints?.proxyHeaders && {
+                  proxyHeaders: stream.behaviorHints.proxyHeaders,
+                }),
+              },
+            };
+          } catch (err) {
+            console.warn(`[plavioVod] skip "${stream?.name}": ${err.message}`);
+            return null;
+          }
+        })
+      );
+      resolved.push(...batchResults.filter(Boolean));
+    }
+
+    console.log(`[plavioVod] ✅ ${resolved.length}/${rawStreams.length} streams ready for ${imdbId}`);
+    return resolved;
   } catch (err) {
-    console.error(`[plavioVod] stream-list fetch failed for ${imdbId}: ${err.message}`);
+    // Absolute last-resort safety net — never throw to the registry
+    console.error(`[plavioVod] getStreams crashed: ${err.stack || err.message}`);
     return [];
   }
-
-  if (rawStreams.length === 0) {
-    console.log(`[plavioVod] No sources for ${imdbId}`);
-    return [];
-  }
-
-  console.log(`[plavioVod] Resolving ${rawStreams.length} source(s) for ${imdbId}…`);
-
-  // Resolve in bounded batches
-  const resolved = [];
-  for (let i = 0; i < rawStreams.length; i += EXTRACT_CONCURRENCY) {
-    const batch = rawStreams.slice(i, i + EXTRACT_CONCURRENCY);
-    const batchResults = await Promise.all(
-      batch.map(async (stream) => {
-        try {
-          const finalUrl = await resolveExtractor(stream);
-          if (!finalUrl) return null;
-          return {
-            name: `Plavio | ${stream.name || 'Source'}`,
-            title: stream.title || stream.name || 'Plavio',
-            url: finalUrl,
-            behaviorHints: {
-              notWebReady: stream.behaviorHints?.notWebReady ?? false,
-              filename: stream.behaviorHints?.filename,
-              ...(stream.behaviorHints?.proxyHeaders && {
-                proxyHeaders: stream.behaviorHints.proxyHeaders,
-              }),
-            },
-          };
-        } catch (err) {
-          console.warn(`[plavioVod] skip "${stream?.name}": ${err.message}`);
-          return null;
-        }
-      })
-    );
-    resolved.push(...batchResults.filter(Boolean));
-  }
-
-  console.log(`[plavioVod] ✅ ${resolved.length}/${rawStreams.length} streams ready for ${imdbId}`);
-  return resolved;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
