@@ -13,6 +13,8 @@
  *   - Explicit, prefixed logging so failures are visible in Render logs.
  *   - Short negative-cache (5 min) so repeated failures don't hammer TMDB.
  *   - getStreams() never throws — always returns an array.
+ *   - Adds Referer + Origin headers so Plavio accepts API requests
+ *     (fixes 403 / empty-source-list issues).
  */
 
 'use strict';
@@ -43,8 +45,10 @@ const DEFAULT_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
     '(KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36',
-  Accept: 'application/json, text/plain, */*',
+  'Accept': 'application/json, text/plain, */*',
   'Accept-Language': 'en-US,en;q=0.9',
+  'Referer': 'https://hd.plavio.site/',
+  'Origin': 'https://hd.plavio.site',
 };
 
 const EXTRACT_CONCURRENCY = 5;
