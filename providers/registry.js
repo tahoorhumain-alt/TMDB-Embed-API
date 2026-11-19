@@ -21,7 +21,8 @@ const providerFunctionMap = {
   'onetouchtv.js': 'getOnetouchtvStreams',
   'zxcstreams.js': 'getZxcstreamsStreams',
   'netnaija.js': 'getNetNaijaStreams', // <--- ADDED NETNAIJA
-  'moviebox.js': 'getMovieBoxStreams'  // <--- ADDED MOVIEBOX
+  'moviebox.js': 'getMovieBoxStreams' 
+  'plavioVod.js': 'getStreams'// <--- ADDED MOVIEBOX
 };
 
 // Stats for debug endpoint
