@@ -20,9 +20,9 @@ const providerFunctionMap = {
   'netmirror.js': 'getNetmirrorStreams',
   'onetouchtv.js': 'getOnetouchtvStreams',
   'zxcstreams.js': 'getZxcstreamsStreams',
-  'netnaija.js': 'getNetNaijaStreams', // <--- ADDED NETNAIJA
-  'moviebox.js': 'getMovieBoxStreams' 
-  'plavioVod.js': 'getStreams'// <--- ADDED MOVIEBOX
+  'netnaija.js': 'getNetNaijaStreams',   // <--- NETNAIJA
+  'moviebox.js': 'getMovieBoxStreams',   // <--- MOVIEBOX (comma fixed)
+  'plavioVod.js': 'getStreams'           // <--- PLAVIO VOD
 };
 
 // Stats for debug endpoint
@@ -100,7 +100,7 @@ function createFetchFunction(providerInfo) {
         }
         global.currentRequestConfig = previousConfig || {};
       } else {
-        // Standard provider call (applies to MovieBox, NetNaija, and all others)
+        // Standard provider call (applies to MovieBox, NetNaija, PlavioVod, and all others)
         result = await module[funcName](ctx.tmdbId, mediaType, ctx.season || null, ctx.episode || null);
       }
 
