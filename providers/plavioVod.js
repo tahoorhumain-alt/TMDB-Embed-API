@@ -1,27 +1,19 @@
 /**
  * providers/plavioVod.js
  *
- * Plavio VOD provider for TMDB-Embed-API.
- *
- * Uses the exact source configuration from:
- * https://hd.plavio.site/{CONFIG}/manifest.json
- *
- * Flow:
- *   1. Fetch stream list from  {base}/{config}/stream/{type}/{imdbId}.json
- *   2. For each stream, resolve the extractor URL to a direct media URL
- *      (handles redirects, JSON bodies, HTML embeds, and direct-proxy endpoints)
- *   3. Return Stremio-compatible stream objects to the client
+ * Plavio VOD provider (movie + series, up to 4K, HTTPS only).
+ * Accepts EITHER a TMDB ID (numeric) OR an IMDb ID (ttXXXXXXX).
+ * Converts TMDB → IMDb automatically using ../utils/tmdbKey.
  */
 
 'use strict';
 
 const axios = require('axios');
+const { getTmdbApiKey } = require('../utils/tmdbKey');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. Constants
+// Config (the exact source set you supplied)
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** The exact URL-encoded source configuration you supplied (minus /manifest.json) */
 const PLAVIO_CONFIG =
   '%7B%22source_4KHDHub%22%3A%22on%22%2C%22source_Cinejoy%22%3A%22on%22%2C' +
   '%22source_Cinezo%22%3A%22on%22%2C%22source_Dexter%22%3A%22on%22%2C' +
@@ -38,7 +30,6 @@ const PLAVIO_CONFIG =
 
 const PLAVIO_BASE = 'https://hd.plavio.site';
 
-/** Base headers used when talking to the Plavio endpoints */
 const DEFAULT_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -47,49 +38,76 @@ const DEFAULT_HEADERS = {
   'Accept-Language': 'en-US,en;q=0.9',
 };
 
-/** How many extractor requests to fire concurrently */
 const EXTRACT_CONCURRENCY = 5;
-
-/** Timeouts (ms) */
 const TIMEOUT_STREAM_LIST = 20_000;
-const TIMEOUT_EXTRACT = 20_000;
+const TIMEOUT_EXTRACT     = 20_000;
+const TIMEOUT_TMDB        = 10_000;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. Small helpers
+// TMDB → IMDb cache + converter
 // ─────────────────────────────────────────────────────────────────────────────
+const imdbCache = new Map(); // `${mediaType}:${tmdbId}` → 'ttXXXXXXX'
 
+async function tmdbToImdb(tmdbId, tmdbMediaType) {
+  const key = `${tmdbMediaType}:${tmdbId}`;
+  if (imdbCache.has(key)) return imdbCache.get(key);
+
+  const apiKey = getTmdbApiKey();
+  if (!apiKey) {
+    console.warn('[plavioVod] TMDB API key missing — cannot convert TMDB ID to IMDb');
+    return null;
+  }
+
+  const endpoint =
+    tmdbMediaType === 'tv'
+      ? `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids`
+      : `https://api.themoviedb.org/3/movie/${tmdbId}/external_ids`;
+
+  try {
+    const res = await axios.get(endpoint, {
+      params: { api_key: apiKey },
+      timeout: TIMEOUT_TMDB,
+    });
+    const imdbId = res.data?.imdb_id;
+    if (imdbId && imdbId.startsWith('tt')) {
+      imdbCache.set(key, imdbId);
+      return imdbId;
+    }
+    console.warn(`[plavioVod] No IMDb ID on TMDB for ${key}`);
+  } catch (err) {
+    console.error(`[plavioVod] TMDB→IMDb lookup failed for ${key}: ${err.message}`);
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 const DIRECT_MEDIA_EXT = /\.(m3u8|mp4|mpd|mkv|webm|ts)(\?|$)/i;
-const MEDIA_CONTENT_TYPE = /^(video\/|application\/(x-mpegurl|vnd\.apple\.mpegurl|dash\+xml)|audio\/)/i;
+const MEDIA_CONTENT_TYPE =
+  /^(video\/|application\/(x-mpegurl|vnd\.apple\.mpegurl|dash\+xml)|audio\/)/i;
 
-function isDirectMediaUrl(u) {
-  return !!u && DIRECT_MEDIA_EXT.test(u);
-}
+const isDirectMediaUrl  = (u) => !!u && DIRECT_MEDIA_EXT.test(u);
+const isMediaContentType = (ct) => !!ct && MEDIA_CONTENT_TYPE.test(ct);
 
-function isMediaContentType(ct) {
-  return !!ct && MEDIA_CONTENT_TYPE.test(ct);
-}
-
-/** Build the Plavio stream-list URL for a given type/id */
-function buildStreamListUrl(type, imdbId, season, episode) {
+function buildStreamListUrl(plavioType, imdbId, season, episode) {
   const base = `${PLAVIO_BASE}/${PLAVIO_CONFIG}/stream`;
-  if (type === 'series' && season != null && episode != null) {
+  if (plavioType === 'series' && season != null && episode != null) {
     return `${base}/series/${encodeURIComponent(imdbId)}:${season}:${episode}.json`;
   }
   return `${base}/movie/${encodeURIComponent(imdbId)}.json`;
 }
 
-/** Merge default headers with any headers supplied by Plavio in behaviorHints */
 function buildRequestHeaders(stream) {
   const proxy = stream?.behaviorHints?.proxyHeaders?.request || {};
   return { ...DEFAULT_HEADERS, ...proxy };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. Fetch the stream list from Plavio
+// Fetch stream list from Plavio
 // ─────────────────────────────────────────────────────────────────────────────
-
-async function fetchStreamList(type, imdbId, season, episode) {
-  const url = buildStreamListUrl(type, imdbId, season, episode);
+async function fetchStreamList(plavioType, imdbId, season, episode) {
+  const url = buildStreamListUrl(plavioType, imdbId, season, episode);
   const res = await axios.get(url, {
     headers: DEFAULT_HEADERS,
     timeout: TIMEOUT_STREAM_LIST,
@@ -100,33 +118,19 @@ async function fetchStreamList(type, imdbId, season, episode) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. Resolve an extractor URL to a final playable URL
+// Resolve an extractor URL → final playable URL
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Plavio stream entries come in two flavours:
- *   a) Direct media URLs (`.m3u8`, `.mp4`, etc.) → return as-is
- *   b) Extractor URLs `…/extract/?index=…&url=…` → need one round-trip
- *
- * For (b) we attempt, in order:
- *   1. HEAD request → check redirect target / content-type
- *   2. GET request  → check redirect target / content-type
- *   3. Parse JSON body for url/link/stream/file keys
- *   4. Regex the body for a media URL
- *   5. Fallback → return the extractor URL itself
- */
 async function resolveExtractor(stream) {
   const originalUrl = stream?.url;
   if (!originalUrl) return null;
 
-  // Fast path: already a direct media URL (and not a Plavio extractor)
   if (isDirectMediaUrl(originalUrl) && !/\/extract\//i.test(originalUrl)) {
     return originalUrl;
   }
 
   const headers = buildRequestHeaders(stream);
 
-  // ── Pass 1: HEAD (cheap, tells us redirect target & content-type) ────────
+  // Pass 1 — HEAD
   try {
     const head = await axios.head(originalUrl, {
       headers,
@@ -134,21 +138,13 @@ async function resolveExtractor(stream) {
       maxRedirects: 10,
       validateStatus: (s) => s >= 200 && s < 400,
     });
-
     const finalUrl = head.request?.res?.responseUrl || originalUrl;
     const ct = head.headers?.['content-type'] || '';
+    if (isMediaContentType(ct) || isDirectMediaUrl(finalUrl)) return finalUrl;
+    if (finalUrl !== originalUrl) return finalUrl;
+  } catch (_) { /* fall through */ }
 
-    if (isMediaContentType(ct) || isDirectMediaUrl(finalUrl)) {
-      return finalUrl;
-    }
-    if (finalUrl !== originalUrl) {
-      return finalUrl;
-    }
-  } catch (_) {
-    /* HEAD often blocked — fall through to GET */
-  }
-
-  // ── Pass 2: GET (full body) ─────────────────────────────────────────────
+  // Pass 2 — GET
   try {
     const res = await axios.get(originalUrl, {
       headers,
@@ -156,47 +152,34 @@ async function resolveExtractor(stream) {
       maxRedirects: 10,
       validateStatus: (s) => s >= 200 && s < 400,
       responseType: 'text',
-      transformResponse: (d) => d, // keep raw body so we can regex it
+      transformResponse: (d) => d,
     });
 
     const finalUrl = res.request?.res?.responseUrl || originalUrl;
     const ct = res.headers?.['content-type'] || '';
+    if (isMediaContentType(ct) || isDirectMediaUrl(finalUrl)) return finalUrl;
+    if (finalUrl !== originalUrl) return finalUrl;
 
-    if (isMediaContentType(ct) || isDirectMediaUrl(finalUrl)) {
-      return finalUrl;
-    }
-    if (finalUrl !== originalUrl) {
-      return finalUrl;
-    }
-
-    // Body may be JSON
     if (typeof res.data === 'string') {
+      // JSON body?
       try {
         const parsed = JSON.parse(res.data);
         if (parsed && typeof parsed === 'object') {
           const candidate =
-            parsed.url ||
-            parsed.link ||
-            parsed.stream ||
-            parsed.file ||
-            parsed.src ||
-            parsed.play_url ||
-            parsed.download_url;
+            parsed.url || parsed.link || parsed.stream || parsed.file ||
+            parsed.src || parsed.play_url || parsed.download_url;
           if (typeof candidate === 'string' && candidate.startsWith('http')) {
             return candidate;
           }
         }
-      } catch (_) {
-        /* not JSON, keep going */
-      }
+      } catch (_) { /* not JSON */ }
 
-      // Body may be HTML with an embedded media URL
+      // Embedded media URL in HTML?
       const mediaMatch = res.data.match(
         /https?:\/\/[^\s"'<>\\]+\.(m3u8|mp4|mpd|mkv|webm|ts)[^\s"'<>\\]*/i
       );
       if (mediaMatch) return mediaMatch[0];
 
-      // Last resort: any absolute URL in the body
       const anyUrl = res.data.match(/https?:\/\/[^\s"'<>\\]+/);
       if (anyUrl) return anyUrl[0];
     }
@@ -206,54 +189,50 @@ async function resolveExtractor(stream) {
     );
   }
 
-  // Fallback: return extractor URL — Stremio can still try with the proxy headers
-  return originalUrl;
+  return originalUrl; // fallback
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. Public API — getStreams
+// Public API — getStreams  (signature auto-detects)
+//
+// Registry calls: getStreams(tmdbId, 'movie'|'tv', season, episode)
+// Direct calls:   getStreams(imdbId, 'movie'|'series', season, episode)
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Supported call signatures (auto-detected):
- *
- *   getStreams(imdbId, 'movie', null, null)
- *   getStreams(imdbId, 'series', season, episode)
- *   getStreams(tmdbId, imdbId, 'movie', null, null)
- *   getStreams(tmdbId, imdbId, 'series', season, episode)
- *
- * NOTE: Plavio requires an IMDb ID (`tt…`). If you only have a TMDB ID,
- * convert it before calling this function.
- *
- * @returns {Promise<Array>} Stremio stream objects
- */
 async function getStreams(...args) {
-  let imdbId, type, season, episode;
+  let rawId, type, season, episode;
 
   if (args.length >= 5) {
-    // (tmdbId, imdbId, type, season, episode)
-    [, imdbId, type, season, episode] = args;
+    [, rawId, type, season, episode] = args;      // (tmdbId, imdbId, type, s, e)
   } else if (args.length === 4) {
-    // (imdbId, type, season, episode)
-    [imdbId, type, season, episode] = args;
+    [rawId, type, season, episode] = args;         // (id, type, s, e)
   } else {
-    [imdbId, type] = args;
+    [rawId, type] = args;                          // (id, type)
   }
 
   type = type || 'movie';
+  if (!rawId) return [];
 
-  if (!imdbId || typeof imdbId !== 'string') {
-    console.warn('[plavioVod] No IMDb ID supplied');
-    return [];
-  }
-  if (!imdbId.startsWith('tt')) {
-    console.warn(`[plavioVod] ID "${imdbId}" is not an IMDb ID — Plavio needs ttXXXXXXX`);
-    return [];
+  // Normalise type: 'tv' → 'series' (Plavio's URL uses /series/)
+  const plavioType = type === 'tv' || type === 'series' ? 'series' : 'movie';
+  const tmdbMediaType = plavioType === 'series' ? 'tv' : 'movie';
+
+  // Resolve final IMDb ID
+  const idStr = String(rawId);
+  let imdbId;
+  if (idStr.startsWith('tt')) {
+    imdbId = idStr;
+  } else {
+    imdbId = await tmdbToImdb(idStr, tmdbMediaType);
+    if (!imdbId) {
+      console.warn(`[plavioVod] Could not resolve IMDb ID from TMDB ${idStr}`);
+      return [];
+    }
   }
 
+  // Fetch Plavio stream list
   let rawStreams = [];
   try {
-    rawStreams = await fetchStreamList(type, imdbId, season, episode);
+    rawStreams = await fetchStreamList(plavioType, imdbId, season, episode);
   } catch (err) {
     console.error(`[plavioVod] stream-list fetch failed for ${imdbId}: ${err.message}`);
     return [];
@@ -266,7 +245,7 @@ async function getStreams(...args) {
 
   console.log(`[plavioVod] Resolving ${rawStreams.length} source(s) for ${imdbId}…`);
 
-  // Resolve with bounded concurrency
+  // Resolve in bounded batches
   const resolved = [];
   for (let i = 0; i < rawStreams.length; i += EXTRACT_CONCURRENCY) {
     const batch = rawStreams.slice(i, i + EXTRACT_CONCURRENCY);
@@ -275,7 +254,6 @@ async function getStreams(...args) {
         try {
           const finalUrl = await resolveExtractor(stream);
           if (!finalUrl) return null;
-
           return {
             name: `Plavio | ${stream.name || 'Source'}`,
             title: stream.title || stream.name || 'Plavio',
@@ -283,16 +261,13 @@ async function getStreams(...args) {
             behaviorHints: {
               notWebReady: stream.behaviorHints?.notWebReady ?? false,
               filename: stream.behaviorHints?.filename,
-              // Keep proxy headers so the client can still apply them if needed
               ...(stream.behaviorHints?.proxyHeaders && {
                 proxyHeaders: stream.behaviorHints.proxyHeaders,
               }),
             },
           };
         } catch (err) {
-          console.warn(
-            `[plavioVod] skipping "${stream?.name || 'unknown'}": ${err.message}`
-          );
+          console.warn(`[plavioVod] skip "${stream?.name}": ${err.message}`);
           return null;
         }
       })
@@ -300,25 +275,18 @@ async function getStreams(...args) {
     resolved.push(...batchResults.filter(Boolean));
   }
 
-  console.log(
-    `[plavioVod] ✅ ${resolved.length}/${rawStreams.length} streams ready for ${imdbId}`
-  );
+  console.log(`[plavioVod] ✅ ${resolved.length}/${rawStreams.length} streams ready for ${imdbId}`);
   return resolved;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. Exports
+// Exports
 // ─────────────────────────────────────────────────────────────────────────────
-
 module.exports = {
-  /** Main provider entry-point used by the API */
   getStreams,
-
-  /** Optional helpers — useful for diagnostics / health checks */
   fetchStreamList,
   resolveExtractor,
-
-  /** Constants (exported so other modules can reuse / override) */
+  tmdbToImdb,
   PLAVIO_CONFIG,
   PLAVIO_BASE,
 };
