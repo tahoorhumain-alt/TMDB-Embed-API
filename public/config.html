@@ -1,293 +1,1165 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
-  <meta charset="utf-8" />
-  <title>TMDB Embed Admin</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="/style.css" />
-  <script defer src="/index.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TMDB Embed Admin</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --text:#e8edf5;
+    --muted:#8892a6; --border:#2a3040; --accent:#4f8cff; --ok:#2ecc71;
+    --warn:#f1c40f; --fail:#e74c3c;
+  }
+  [data-theme="light"]{
+    --bg:#f6f7fb; --panel:#ffffff; --panel2:#eef1f6; --text:#0f1115;
+    --muted:#5a6478; --border:#d8dde8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  a{color:var(--accent)}
+  .app{display:flex;min-height:100vh}
+  /* Sidebar */
+  #sidebar{width:230px;background:var(--panel);border-right:1px solid var(--border);
+    position:sticky;top:0;height:100vh;overflow-y:auto;flex:0 0 auto;transition:transform .2s ease}
+  #sidebar .brand{padding:16px 18px;font-weight:700;font-size:16px;border-bottom:1px solid var(--border)}
+  #sidebar .nav{padding:10px 0}
+  .nav-item{display:block;width:100%;text-align:left;background:none;border:0;color:var(--text);
+    padding:10px 18px;cursor:pointer;font:inherit;border-left:3px solid transparent}
+  .nav-item:hover{background:var(--panel2)}
+  .nav-item.active{border-left-color:var(--accent);background:var(--panel2);font-weight:600}
+  .theme-toggle{margin:14px 18px;padding:8px 12px;background:var(--panel2);border:1px solid var(--border);
+    color:var(--text);border-radius:6px;cursor:pointer}
+  /* Main */
+  main{flex:1;padding:22px;max-width:1100px}
+  h1{margin:0 0 4px;font-size:22px}
+  .muted{color:var(--muted)}
+  .panel{display:none}
+  .panel.active{display:block}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;margin:14px 0}
+  label{display:block;margin:10px 0 4px;font-weight:600;font-size:13px}
+  input[type=text],input[type=number],textarea,select{
+    width:100%;padding:8px 10px;background:var(--panel2);color:var(--text);
+    border:1px solid var(--border);border-radius:6px;font:inherit}
+  textarea{min-height:80px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+  textarea[disabled]{opacity:.45}
+  input.invalid,textarea.invalid{border-color:var(--fail)!important;box-shadow:0 0 0 2px rgba(231,76,60,.25)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .btn{padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);
+    color:var(--text);cursor:pointer;font:inherit}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .btn.danger{background:var(--fail);color:#fff;border-color:var(--fail)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;white-space:pre-wrap;word-break:break-word}
+  pre.mono{background:var(--panel2);padding:12px;border-radius:8px;border:1px solid var(--border);
+    max-height:340px;overflow:auto}
+  /* Cookies / keys */
+  #febboxCookieList,#tmdbKeyList{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .cookie-item,.key-item{display:flex;gap:8px;align-items:center;background:var(--panel2);
+    padding:6px 10px;border-radius:6px;border:1px solid var(--border)}
+  .cookie-item code,.key-item code{flex:1;font-size:11px;word-break:break-all;color:var(--muted)}
+  .cookie-item .remove,.key-item .remove{background:none;border:0;color:var(--fail);cursor:pointer;font-size:14px}
+  .empty{color:var(--muted);font-style:italic;padding:8px}
+  /* Provider matrix */
+  #providerMatrix{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .pm-item{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--border);
+    border-radius:6px;padding:6px 10px}
+  .pm-item[data-enabled="false"]{opacity:.5}
+  .pm-name{font-weight:600;font-size:13px}
+  .pm-enable,.pm-default{background:none;border:0;cursor:pointer;font-size:14px;color:var(--text)}
+  .pm-item[data-default="true"] .pm-default{color:var(--warn)}
+  /* Status page */
+  .prov-row{display:grid;grid-template-columns:1.4fr .6fr .7fr .7fr .8fr 1.5fr;
+    gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border);font-size:13px}
+  .prov-row.header{font-weight:700;color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.5px}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;text-align:center}
+  .badge.ok{background:rgba(46,204,113,.15);color:var(--ok)}
+  .badge.off{background:rgba(136,146,166,.15);color:var(--muted)}
+  .badge.warn{background:rgba(241,196,15,.15);color:var(--warn)}
+  .badge.fail{background:rgba(231,76,60,.15);color:var(--fail)}
+  .notes{font-size:12px;color:var(--muted)}
+  /* Modal */
+  .modal{display:none;position:fixed;inset:0;align-items:center;justify-content:center;z-index:50}
+  .modal.show{display:flex}
+  .modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+  .modal-body{position:relative;background:var(--panel);border:1px solid var(--border);
+    border-radius:10px;padding:20px;max-width:420px;width:90%;z-index:1}
+  .modal-body h3{margin:0 0 8px}
+  /* Banner */
+  .banner{display:none;padding:10px 14px;border-radius:8px;margin:10px 0;font-size:13px}
+  .banner.warn{background:rgba(241,196,15,.1);border:1px solid var(--warn);color:var(--warn)}
+  .banner.info{background:rgba(79,140,255,.1);border:1px solid var(--accent);color:var(--accent)}
+  #validationSummary{min-height:20px;font-size:12px;color:var(--muted);margin:6px 0}
+  #validationSummary.has-errors{color:var(--fail);font-weight:600}
+  /* Mobile */
+  .burger{display:none;background:var(--panel);border:1px solid var(--border);color:var(--text);
+    padding:8px 12px;border-radius:6px;cursor:pointer;margin-right:10px}
+  .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40}
+  .overlay.show{display:block}
+  @media(max-width:820px){
+    .burger{display:inline-block}
+    #sidebar{position:fixed;left:0;top:0;z-index:45;transform:translateX(-100%)}
+    #sidebar.open{transform:translateX(0)}
+    main{padding:14px}
+    .prov-row{grid-template-columns:1fr 1fr;gap:4px}
+    .prov-row.header{display:none}
+  }
+</style>
 </head>
 <body>
-  <button class="burger" aria-label="Toggle navigation">☰</button>
-  <div class="overlay"></div>
-  <aside class="sidebar" id="sidebar">
-    <div class="brand">TMDB Embed API</div>
+<div class="app">
+  <aside id="sidebar">
+    <div class="brand">TMDB Embed Admin</div>
     <nav class="nav">
-      <button class="nav-item" id="logoutBtn" data-action="logout">Logout</button>
-      <button class="nav-item" id="restartBtn" type="button">Restart Server</button>
-      <div class="nav-sep" role="separator" aria-hidden="true"></div>
-      <button class="nav-item" data-target="panel-status">Server Status</button>
-      <button class="nav-item" data-target="panel-core">Core</button>
-      <button class="nav-item" data-target="panel-quality">Quality / Filters</button>
-      <button class="nav-item" data-target="panel-keys">Keys</button>
+      <button class="nav-item active" data-target="panel-status">Server Status</button>
+      <button class="nav-item" data-target="panel-core">Core Settings</button>
+      <button class="nav-item" data-target="panel-quality">Quality &amp; Filtering</button>
+      <button class="nav-item" data-target="panel-keys">API Keys</button>
       <button class="nav-item" data-target="panel-febbox">FebBox / PStream</button>
-      <button class="nav-item" data-target="panel-advanced">Advanced</button>
-      <button class="nav-item" data-target="panel-live">Live Config</button>
-      <div class="grow"></div>
+      <button class="nav-item" data-target="panel-advanced">Advanced &amp; Providers</button>
+      <button class="nav-item" data-target="panel-paths">Paths</button>
+      <button class="nav-item" data-target="panel-live">Live Configuration</button>
     </nav>
-    <footer class="side-footer">
-      <a class="hint" style="margin-top: .5rem; color: var(--primary-fg);" href="https://github.com/Inside4ndroid" target="_blank">Github</a>
-      <a class="hint" style="margin-top: .5rem; color: var(--primary-fg);"  href="https://x.com/Inside_4ndroid" target="_blank">X (Twitter)</a>
-    </footer>
-    <footer class="side-footer">Credits to :<a class="hint" style="margin-top: .5rem; color: var(--primary-fg);" href="https://github.com/tapframe/NuvioStreamsAddon" target="_blank">NuvioStreamsAddon for Stremio</a></footer>
-    <div class="bmc-widget-container" style="text-align: center;">
-      <iframe src="https://github.com/sponsors/Inside4ndroid/button" title="Sponsor Inside4ndroid" height="32" width="114" style="border:0;border-radius:6px;margin-top:.5rem;"></iframe>
-    </div>
-    <footer class="side-footer">Made with ❤️ by Inside4ndroid</footer>
+    <button class="theme-toggle" type="button">Toggle Theme</button>
+    <button id="logoutBtn" class="theme-toggle" type="button" style="margin-top:0">Logout</button>
   </aside>
-  <main class="main">
-    <div id="bootWarn" class="alert warning" style="display:none;">No FEBBOX_COOKIES configured. Showbox / PStream streams may be unavailable.</div>
-    <div id="cacheDisabledBanner" class="alert info" style="display:none;">Cache is <strong>DISABLED</strong>; expect slower responses & higher source load.</div>
-    <div id="tmdbMissingBanner" class="alert warning" style="display:none;">No TMDB API Keys configured. Metadata-dependent providers (Showbox, 4khdhub) may degrade.</div>
-    
-    <!-- Banner for restored settings -->
-    <div id="localBackupWarn" class="alert warning" style="display:none; background: #ff9800; color: #000;">
-      <strong>Server Restarted!</strong> Your server settings were wiped. Auto-restoring settings from your browser's local backup now...
-    </div>
+  <div class="overlay"></div>
+  <main>
+    <button class="burger" type="button" aria-label="Menu">☰</button>
+    <div id="status" class="muted" style="margin-bottom:10px"></div>
+    <div id="cacheDisabledBanner" class="banner warn">Caching is disabled — every request hits providers live.</div>
+    <div id="tmdbMissingBanner" class="banner warn">No TMDB API key configured. TMDB-dependent providers will fail.</div>
+    <div id="bootWarn" class="banner warn">No FebBox cookies configured. Showbox/PStream streams may be unavailable.</div>
 
-    <form id="cfgForm" onsubmit="return false;" class="panels">
-      <section id="panel-status" class="panel">
-        <h1>Server Status<button style="margin-left: 1rem;" id="refreshStatusBtn" type="button">Refresh Status</button></h1>
-        <div class="status-grid">
-          <div class="status-block">
-            <h2>Metrics</h2>
-            <pre id="statusMetrics" class="status-pre">loading...</pre>
-          </div>
-          <div class="status-block">
-            <h2>Providers</h2>
-            <div class="field" style="margin-bottom:.75rem;">
-              <label>Provider check TMDB ID<p class="hint">Title used by "Run Provider Functional Checks" (e.g. 278 = Shawshank Redemption).</p></label>
-              <div style="display:flex; align-items:center; gap:.5rem;">
-                <input type="text" id="providerCheckTmdbId" placeholder="278" style="width:7rem;" />
-                <button id="saveProviderCheckTmdbBtn" type="button">Save</button>
-              </div>
-            </div>
-            <button style="margin-bottom: 1rem;" id="runProviderChecksBtn" type="button">Run Provider Functional Checks</button>
-            <span style="margin-left: .5rem; margin-bottom: 1rem;" id="providerCheckSummary" class="hint"></span>
-            <div id="statusProvidersEnhanced" class="providers-table" aria-live="polite"></div>
-          </div>
-          <div class="status-block wide">
-            <h2>Endpoints</h2>
-            <pre id="statusEndpoints" class="status-pre">loading...</pre>
+    <!-- STATUS -->
+    <section id="panel-status" class="panel active">
+      <h1>Server Status</h1>
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <h3 style="margin:0">Metrics</h3>
+          <button id="refreshStatusBtn" class="btn" type="button">Refresh</button>
+        </div>
+        <pre id="statusMetrics" class="mono">Loading…</pre>
+        <label>Last Error</label>
+        <div id="statusLastError" class="mono muted">(none)</div>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px">Endpoints</h3>
+        <pre id="statusEndpoints" class="mono">Loading…</pre>
+      </div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between;margin-bottom:8px">
+          <h3 style="margin:0">Providers</h3>
+          <div class="row">
+            <input id="providerCheckTmdbId" type="text" placeholder="TMDB ID" style="width:110px">
+            <button id="saveProviderCheckTmdbBtn" class="btn" type="button">Save ID</button>
+            <button id="runProviderChecksBtn" class="btn primary" type="button">Run Checks</button>
           </div>
         </div>
-      </section>
-      
-      <section id="panel-core" class="panel">
-        <h1>Core Settings</h1>
-        <div class="field"><label>API Port<p class="hint">Provider enable/disable & feature flags apply immediately. Click toggles to enable (highlighted) or disable (dim).</p><input type="text" name="port" placeholder="8787" /></label></div>
-        <div class="field"><label>Default Region<p class="hint">This is best left set to auto/none.</p>
-          <select name="defaultRegion">
-            <option value="">(auto / none)</option>
-            <option value="USA7">US East</option>
-            <option value="USA6">US West</option>
-            <option value="USA5">US Middle</option>
-            <option value="UK3">United Kingdom</option>
-            <option value="CA1">Canada</option>
-            <option value="FR1">France</option>
-            <option value="DE2">Germany</option>
-            <option value="HK1">Hong Kong</option>
-            <option value="IN1">India</option>
-            <option value="AU1">Australia</option>
-            <option value="SZ">China</option>
-          </select>
-        </label></div>
-        <div class="field"><label>Providers (Enable + Default)<p class="hint">Click power icon to enable/disable, star to mark as default. If no defaults selected all enabled providers aggregate.</p>
-          <div id="providerMatrix" class="provider-matrix" aria-live="polite"></div>
-          <input type="hidden" name="defaultProviders" />
-        </label>
+        <div id="statusProvidersEnhanced">
+          <div class="prov-row">Loading…</div>
         </div>
-      </section>
-      
-      <section id="panel-quality" class="panel">
-        <h1>Quality & Filtering</h1>
-        <div class="field quality-group"><label>Minimum Quality<p class="hint">Preset radios serialize to a simple string. Custom & advanced modes use the JSON fields.</p>
-          <div class="quality-presets" id="qualityPresets">
-            <label class="q-item"><input type="radio" name="qualityPreset" value="all"> <span>All</span></label>
-            <label class="q-item"><input type="radio" name="qualityPreset" value="480p"> <span>480p+</span></label>
-            <label class="q-item"><input type="radio" name="qualityPreset" value="720p"> <span>720p+</span></label>
-            <label class="q-item"><input type="radio" name="qualityPreset" value="1080p"> <span>1080p+</span></label>
-            <label class="q-item"><input type="radio" name="qualityPreset" value="1440p"> <span>1440p+</span></label>
-            <label class="q-item"><input type="radio" name="qualityPreset" value="2160p"> <span>4K+</span></label>
-            <label class="q-item adv"><input type="radio" name="qualityPreset" value="custom"> <span>Custom JSON</span></label>
-          </div>
-        </label>
-        <textarea name="minQualitiesRaw" class="mini quality-json" placeholder='{"default":"900p"}' disabled></textarea>
+        <div id="providerCheckSummary" class="muted" style="margin-top:8px"></div>
+      </div>
+    </section>
+
+    <!-- CORE -->
+    <section id="panel-core" class="panel">
+      <h1>Core Settings</h1>
+      <form id="cfgForm" class="card" onsubmit="return false">
+        <label>Port</label>
+        <input name="port" type="number" min="1" max="65535" placeholder="8787">
+        <label>Default Region</label>
+        <input name="defaultRegion" type="text" placeholder="IN1">
+        <label>Default Providers (comma-separated)</label>
+        <input name="defaultProviders" type="text" placeholder="plaviovod,netnaija,…">
+        <div id="providerMatrix"></div>
+        <div id="validationSummary"></div>
+        <div class="row" style="margin-top:14px">
+          <button id="saveBtn" class="btn primary" type="button">Save</button>
+          <button id="reloadBtn" class="btn" type="button">Reload</button>
+          <button id="clearBtn" class="btn danger" type="button">Reset to Defaults</button>
+          <button id="restartBtn" class="btn" type="button">Restart Server</button>
         </div>
-        <div class="field codec-group"><label>Exclude Codecs<p class="hint">Preset radios serialize to JSON. Advanced lets you edit the JSON directly.</p>
-          <div class="codec-presets" id="codecPresets">
-            <label class="c-item"><input type="radio" name="codecPreset" value="none"> <span>None</span></label>
-            <label class="c-item"><input type="radio" name="codecPreset" value="all"> <span>All</span></label>
-            <label class="c-item"><input type="radio" name="codecPreset" value="dv"> <span>Dolby Vision (DV)</span></label>
-            <label class="c-item"><input type="radio" name="codecPreset" value="hdr"> <span>HDR / HDR10(+)</span></label>
-            <label class="c-item adv"><input type="radio" name="codecPreset" value="advanced"> <span>Advanced JSON</span></label>
-          </div>
-        </label>
-        <textarea name="excludeCodecsRaw" class="mini json-adv" placeholder='{"excludeDV":true,"excludeHDR":false}' disabled></textarea>
+      </form>
+    </section>
+
+    <!-- QUALITY -->
+    <section id="panel-quality" class="panel">
+      <h1>Quality &amp; Filtering</h1>
+      <div class="card">
+        <label>Minimum Quality Preset</label>
+        <div class="row">
+          <label><input type="radio" name="qualityPreset" value="all" checked> All</label>
+          <label><input type="radio" name="qualityPreset" value="480p"> 480p+</label>
+          <label><input type="radio" name="qualityPreset" value="720p"> 720p+</label>
+          <label><input type="radio" name="qualityPreset" value="1080p"> 1080p+</label>
+          <label><input type="radio" name="qualityPreset" value="1440p"> 1440p+</label>
+          <label><input type="radio" name="qualityPreset" value="2160p"> 2160p+</label>
+          <label><input type="radio" name="qualityPreset" value="custom"> Custom</label>
         </div>
-      </section>
-      
-      <section id="panel-keys" class="panel">
-        <h1>API Keys</h1>
-        <div class="field"><label>TMDB API Keys<p class="hint">Add multiple TMDB API keys. They rotate randomly per request to spread usage.</p>
-          <div class="key-add-row">
-            <input id="tmdbKeyInput" type="text" placeholder="Enter TMDB key" autocomplete="off" />
-            <button id="addTmdbKeyBtn" type="button" class="small">Add Key</button>
-          </div>
-          <div id="tmdbKeyList" class="key-list" aria-live="polite"></div>
-          <input type="hidden" name="tmdbApiKeysHidden" />
-        </label></div>
-      </section>
-      
-      <section id="panel-febbox" class="panel">
-        <h1>FebBox / PStream</h1>
-        <p class="hint">ShowBox fetches content from a cloud storage provider called FebBox. Each FebBox user gets 100GB/month of fast streaming before speeds are reduced.</p>
-        <a class="hint" style="margin-bottom: 1rem;" href="https://febbox.com">Febbox Website</a>
-        <div class="field"><label>FebBox Cookies<p class="hint">Add multiple FebBox ui tokens. They will rotate / be evaluated. Removal updates overrides after saving.</p>
-          <div class="cookie-add-row">
-            <input id="febboxCookieInput" type="text" placeholder="Enter ui token (without ui=)" autocomplete="off" />
-            <button id="addFebboxCookieBtn" type="button" class="small">Add Cookie</button>
-          </div>
-          <div id="febboxCookieList" class="cookie-list" aria-live="polite"></div>
-          <input type="hidden" name="febboxCookiesHidden" />
-        </label></div>
-      </section>
-      
-      <section id="panel-advanced" class="panel">
-        <h1>Advanced & Providers</h1>
-        <p class="hint">These settings allow you to customize the behavior of the api and will effect timings.</p>
-        <div class="field adv-flag-grid" id="advFlags" aria-label="Core Feature Flags">
-          <label class="adv-flag-item"><input type="checkbox" name="adv_disableCache" value="1" /> <span>Disable Cache</span></label>
-          <label class="adv-flag-item"><input type="checkbox" name="adv_disableUrlValidation" value="1" /> <span>Disable URL Validation</span></label>
-          <label class="adv-flag-item"><input type="checkbox" name="adv_disable4khdhubValidation" value="1" /> <span>Disable 4KHDHub Validation</span></label>
-          <label class="adv-flag-item"><input type="checkbox" name="adv_enableProxy" value="1" /> <span>Enable Stream Proxy</span></label>
+        <textarea name="minQualitiesRaw" disabled placeholder='{"default":"all"}'></textarea>
+        <label style="margin-top:14px">Codec Exclusions</label>
+        <div class="row">
+          <label><input type="radio" name="codecPreset" value="none" checked> None</label>
+          <label><input type="radio" name="codecPreset" value="all"> All (DV + HDR)</label>
+          <label><input type="radio" name="codecPreset" value="dv"> Exclude DV</label>
+          <label><input type="radio" name="codecPreset" value="hdr"> Exclude HDR</label>
+          <label><input type="radio" name="codecPreset" value="advanced"> Advanced</label>
         </div>
-        <h1>Paths</h1>
-        <p class="hint">Provider enable/disable & feature flags apply immediately. Click toggles to enable (highlighted) or disable (dim).</p>
-        <div class="adv-group">
-          <div class="field small"><label>Showbox Cache Dir <input type="text" name="adv_showboxCacheDir" placeholder="/data/showbox-cache"/></label></div>
+        <textarea name="excludeCodecsRaw" disabled placeholder='{"excludeDV":false,"excludeHDR":false}'></textarea>
+      </div>
+    </section>
+
+    <!-- KEYS -->
+    <section id="panel-keys" class="panel">
+      <h1>API Keys</h1>
+      <div class="card">
+        <label>TMDB API Keys (v3 hex or v4 JWT)</label>
+        <div class="row">
+          <input id="tmdbKeyInput" type="text" placeholder="Paste a TMDB key…">
+          <button id="addTmdbKeyBtn" class="btn" type="button">Add</button>
         </div>
-      </section>
-      
-      <section id="panel-live" class="panel">
-        <h1>Live Configuration</h1>
-        <h2>Merged</h2>
-        <p class="hint">This section shows the currently active configuration, including all merged settings from various sources.</p>
-        <pre id="currentCfg">loading...</pre>
-        <h2>Overrides (user-config.json)</h2>
-        <p class="hint">These are the user-defined settings from this panel that override the default configuration.</p>
-        <pre id="overrideCfg">(none)</pre>
-      </section>
-    </form>
-    
-    <div class="actions-bar">
-      <button id="saveBtn" type="button" class="primary" disabled>Save Overrides</button>
-      <button id="reloadBtn" type="button">Reload</button>
-      <button id="clearBtn" type="button" class="danger">Clear All</button>
-      <span id="status" class="status"></span>
-      <span id="validationSummary" class="validation-summary"></span>
-    </div>
+        <input type="hidden" name="tmdbApiKeysHidden">
+        <div id="tmdbKeyList"></div>
+      </div>
+    </section>
+
+    <!-- FEBBOX -->
+    <section id="panel-febbox" class="panel">
+      <h1>FebBox / PStream</h1>
+      <div class="card">
+        <p class="muted">ShowBox fetches content from a cloud storage provider called FebBox. Each FebBox user gets 100GB/month of fast streaming before speeds are reduced.</p>
+        <label>FebBox Cookies (JWT)</label>
+        <div class="row">
+          <input id="febboxCookieInput" type="text" placeholder="Paste a cookie JWT…">
+          <button id="addFebboxCookieBtn" class="btn" type="button">Add</button>
+        </div>
+        <input type="hidden" name="febboxCookiesHidden">
+        <div id="febboxCookieList"></div>
+      </div>
+    </section>
+
+    <!-- ADVANCED -->
+    <section id="panel-advanced" class="panel">
+      <h1>Advanced &amp; Providers</h1>
+      <div class="card">
+        <p class="muted">These settings customize API behavior and affect timings.</p>
+        <div id="advFlags" class="row" style="flex-direction:column;align-items:flex-start;gap:10px">
+          <label class="adv-flag-item"><input type="checkbox" name="adv_enable4khdhub"> Enable 4KHDHub</label>
+          <label class="adv-flag-item"><input type="checkbox" name="adv_enableVixsrc"> Enable VixSrc</label>
+          <label class="adv-flag-item"><input type="checkbox" name="adv_enableProxy"> Enable Proxy</label>
+          <label class="adv-flag-item"><input type="checkbox" name="adv_disableCache"> Disable Cache</label>
+          <label class="adv-flag-item"><input type="checkbox" name="adv_enablePStream"> Enable PStream API</label>
+          <label class="adv-flag-item"><input type="checkbox" name="adv_disableUrlValidation"> Disable URL Validation</label>
+          <label class="adv-flag-item"><input type="checkbox" name="adv_disable4khdhubValidation"> Disable 4KHDHub URL Validation</label>
+        </div>
+        <label style="margin-top:14px">Showbox Cache Dir</label>
+        <input name="adv_showboxCacheDir" type="text" placeholder="/tmp/showbox-cache">
+      </div>
+    </section>
+
+    <!-- PATHS -->
+    <section id="panel-paths" class="panel">
+      <h1>Paths</h1>
+      <div class="card">
+        <p class="muted">Provider enable/disable flags apply immediately. Click the matrix on Core Settings to toggle.</p>
+      </div>
+    </section>
+
+    <!-- LIVE -->
+    <section id="panel-live" class="panel">
+      <h1>Live Configuration</h1>
+      <div class="card">
+        <h3 style="margin:0 0 8px">Merged</h3>
+        <p class="muted">Active config after merging defaults and overrides.</p>
+        <pre id="currentCfg" class="mono">{}</pre>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px">Overrides (user-config.json)</h3>
+        <p class="muted">User-defined settings that override defaults.</p>
+        <pre id="overrideCfg" class="mono">(none)</pre>
+      </div>
+    </section>
   </main>
+</div>
 
-  <!-- Confirmation Modal -->
-  <div id="confirmReset" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="confirmResetTitle">
-    <div class="modal-backdrop"></div>
-    <div class="modal-window">
-      <h3 id="confirmResetTitle">Reset All Settings?</h3>
-      <p class="modal-text">This will remove all overrides, delete all TMDB API keys and FebBox cookies, and restore provider and feature flags to their defaults. This action cannot be undone.</p>
-      <ul class="modal-list">
-        <li>Clear TMDB keys and FebBox cookies</li>
-        <li>Reset provider enable/default selections</li>
-        <li>Reapply default quality and validation settings</li>
-      </ul>
-      <label class="modal-opt"><input type="checkbox" id="confirmResetDontAsk" /> Don't ask again on this device</label>
-      <div class="modal-actions">
-        <button type="button" class="danger" data-action="confirm">Reset Everything</button>
-        <button type="button" data-action="cancel">Cancel</button>
-      </div>
+<!-- Modals -->
+<div id="confirmReset" class="modal">
+  <div class="modal-backdrop"></div>
+  <div class="modal-body">
+    <h3>Reset all settings?</h3>
+    <p class="muted">This wipes every override and restores defaults.</p>
+    <label><input type="checkbox" id="confirmResetDontAsk"> Don't ask again</label>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn" data-action="cancel" type="button">Cancel</button>
+      <button class="btn danger" data-action="confirm" type="button">Reset</button>
     </div>
   </div>
+</div>
 
-  <!-- Restart Confirmation Modal -->
-  <div id="confirmRestart" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="confirmRestartTitle">
-    <div class="modal-backdrop"></div>
-    <div class="modal-window">
-      <h3 id="confirmRestartTitle">Restart Server?</h3>
-      <p class="modal-text">This will stop the server process and attempt to restart it. Active requests will be interrupted.</p>
-      <ul class="modal-list">
-        <li>Interrupts any in-flight API calls</li>
-        <li>Server will exit and come back up</li>
-        <li>UI will auto-reload when available</li>
-      </ul>
-      <div class="modal-actions">
-        <button type="button" class="danger" data-action="confirm">Restart Now</button>
-        <button type="button" data-action="cancel">Cancel</button>
-      </div>
+<div id="confirmRestart" class="modal">
+  <div class="modal-backdrop"></div>
+  <div class="modal-body">
+    <h3>Restart server?</h3>
+    <p class="muted">The process will exit; your host should auto-restart it.</p>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn" data-action="cancel" type="button">Cancel</button>
+      <button class="btn primary" data-action="confirm" type="button">Restart</button>
     </div>
   </div>
+</div>
 
-  <!-- AGGRESSIVE AUTO-INJECT & AUTO-SAVE SCRIPT -->
-  <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      const HARDCODED_TMDB_KEY = "9fca360bfe48e49cff3d54a1e29ab578";
-      const HARDCODED_FEBBOX_COOKIE = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3OTMzMzA4ODUsIm5iZiI6MTc5MzMzMDg4NSwiZXhwIjoxODI0NDM0OTA1LCJkYXRhIjp7InVpZCI6MjU1MjU3NiwidG9rZW4iOiIxOTliYzNhYTU0MDIyZmFjODQwMzcwNWUxZjkxYzJjMCJ9fQ.uliT3Yt2q0VuwhxDHwJrG4G9FY31U68DVrb5B3LpHcU";
-      
-      let attempts = 0;
-      
-      // Check every 1 second (up to 20 seconds) for the page to load fully
-      const interval = setInterval(() => {
-        attempts++;
-        
-        const keyInput = document.getElementById('tmdbKeyInput');
-        const addKeyBtn = document.getElementById('addTmdbKeyBtn');
-        const keyList = document.getElementById('tmdbKeyList');
-        
-        const cookieInput = document.getElementById('febboxCookieInput');
-        const addCookieBtn = document.getElementById('addFebboxCookieBtn');
-        const cookieList = document.getElementById('febboxCookieList');
-        
-        const saveBtn = document.getElementById('saveBtn');
+<script>
+(function(){
+  'use strict';
 
-        let changed = false;
+  // ---------- Utilities ----------
+  function $(sel, root){ return (root||document).querySelector(sel); }
+  function $all(sel, root){ return Array.from((root||document).querySelectorAll(sel)); }
 
-        // 1. Inject TMDB Key automatically
-        if (keyInput && addKeyBtn && keyList) {
-            if (!keyList.innerText.includes(HARDCODED_TMDB_KEY)) {
-                keyInput.value = HARDCODED_TMDB_KEY;
-                // Trigger input event so the framework registers the change
-                keyInput.dispatchEvent(new Event('input', { bubbles: true }));
-                addKeyBtn.click();
-                keyInput.value = ''; 
-                changed = true;
-            }
-        }
+  function setStatus(msg, isErr){
+    const el = document.getElementById('status');
+    if(!el) return;
+    el.textContent = msg || '';
+    el.style.color = isErr ? 'var(--fail)' : 'var(--muted)';
+  }
 
-        // 2. Inject FebBox Cookie automatically
-        if (cookieInput && addCookieBtn && cookieList) {
-            if (!cookieList.innerText.includes(HARDCODED_FEBBOX_COOKIE.substring(0, 20))) {
-                cookieInput.value = HARDCODED_FEBBOX_COOKIE;
-                cookieInput.dispatchEvent(new Event('input', { bubbles: true }));
-                addCookieBtn.click();
-                cookieInput.value = ''; 
-                changed = true;
-            }
-        }
+  function markInvalid(el){
+    if(!el) return;
+    el.classList.add('invalid');
+    setTimeout(()=>el.classList.remove('invalid'), 3000);
+  }
 
-        // 3. Auto-Save if we made changes to push them to the server
-        if (changed && saveBtn && !saveBtn.disabled) {
-            setTimeout(() => {
-                saveBtn.click();
-                console.log("Auto-saved keys successfully!");
-                document.getElementById('localBackupWarn').style.display = 'none';
-            }, 1500); // Wait 1.5 seconds for the UI to register the keys before saving
-        }
+  async function fetchConfig(){
+    const r = await fetch('/api/config', { cache: 'no-store' });
+    if(!r.ok) throw new Error('Failed to fetch config (HTTP ' + r.status + ')');
+    return r.json();
+  }
+  async function fetchProviders(){
+    const r = await fetch('/api/providers', { cache: 'no-store' });
+    if(!r.ok) throw new Error('Failed to fetch providers (HTTP ' + r.status + ')');
+    return r.json();
+  }
 
-        // Stop trying after 20 seconds to prevent infinite loops
-        if (attempts > 20) {
-            clearInterval(interval);
-        }
-      }, 1000);
+  // ---------- FebBox cookies ----------
+  function setFebboxCookies(cookiesArray){
+    const listEl = document.getElementById('febboxCookieList');
+    const hidden = document.querySelector('input[name="febboxCookiesHidden"]');
+    if(!listEl || !hidden) return;
+    const arr = Array.isArray(cookiesArray) ? cookiesArray.filter(c => c && typeof c === 'string') : [];
+    hidden.value = arr.join(',');
+    listEl.innerHTML = arr.length
+      ? arr.map((c,i)=>'<div class="cookie-item" data-idx="'+i+'"><code>'+escapeHtml(c)+'</code><button type="button" class="remove" title="Remove" data-action="rm" data-idx="'+i+'">✕</button></div>').join('')
+      : '<div class="empty">No cookies added</div>';
+  }
+  function addFebboxCookie(){
+    const input = document.getElementById('febboxCookieInput');
+    if(!input) return;
+    const val = (input.value||'').trim();
+    if(!val) return;
+    const hidden = document.querySelector('input[name="febboxCookiesHidden"]');
+    const existing = hidden.value ? hidden.value.split(',').filter(Boolean) : [];
+    if(existing.includes(val)){ input.value=''; return; }
+    existing.push(val);
+    setFebboxCookies(existing);
+    input.value='';
+    validate();
+  }
+  function removeFebboxCookie(idx){
+    const i = Number(idx);
+    if(!Number.isInteger(i) || i < 0) return;
+    const hidden = document.querySelector('input[name="febboxCookiesHidden"]');
+    if(!hidden) return;
+    const existing = hidden.value ? hidden.value.split(',').filter(Boolean) : [];
+    setFebboxCookies(existing.filter((_, k) => k !== i));
+    validate();
+  }
+
+  // ---------- TMDB keys ----------
+  function setTmdbKeys(keys){
+    const listEl = document.getElementById('tmdbKeyList');
+    const hidden = document.querySelector('input[name="tmdbApiKeysHidden"]');
+    if(!listEl || !hidden) return;
+    const arr = Array.isArray(keys) ? keys.filter(k => k && typeof k === 'string') : [];
+    hidden.value = arr.join(',');
+    listEl.innerHTML = arr.length
+      ? arr.map((k,i)=>'<div class="key-item" data-idx="'+i+'"><code>'+escapeHtml(k)+'</code><button type="button" class="remove" data-action="rm-tmdb" data-idx="'+i+'" title="Remove">✕</button></div>').join('')
+      : '<div class="empty">No TMDB keys</div>';
+  }
+  function addTmdbKey(){
+    const input = document.getElementById('tmdbKeyInput');
+    if(!input) return;
+    const val = (input.value||'').trim();
+    if(!val) return;
+    const hidden = document.querySelector('input[name="tmdbApiKeysHidden"]');
+    const existing = hidden.value ? hidden.value.split(',').filter(Boolean) : [];
+    if(existing.includes(val)){ input.value=''; return; }
+    existing.push(val);
+    setTmdbKeys(existing);
+    input.value='';
+    validate();
+  }
+  function removeTmdbKey(idx){
+    const i = Number(idx);
+    if(!Number.isInteger(i) || i < 0) return;
+    const hidden = document.querySelector('input[name="tmdbApiKeysHidden"]');
+    if(!hidden) return;
+    const existing = hidden.value ? hidden.value.split(',').filter(Boolean) : [];
+    setTmdbKeys(existing.filter((_, k) => k !== i));
+    validate();
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ---------- Global click/keydown for cookies & keys ----------
+  document.addEventListener('click', (e) => {
+    if(e.target.closest('#addFebboxCookieBtn')) return void addFebboxCookie();
+    const rmCookie = e.target.closest('.cookie-item button.remove');
+    if(rmCookie){ return void removeFebboxCookie(rmCookie.dataset.idx); }
+    if(e.target.closest('#addTmdbKeyBtn')) return void addTmdbKey();
+    const rmKey = e.target.closest('.key-item button.remove');
+    if(rmKey){ return void removeTmdbKey(rmKey.dataset.idx); }
+  });
+  document.addEventListener('keydown', (e) => {
+    if(e.key !== 'Enter') return;
+    if(e.target && e.target.id === 'febboxCookieInput'){ e.preventDefault(); addFebboxCookie(); }
+    if(e.target && e.target.id === 'tmdbKeyInput'){ e.preventDefault(); addTmdbKey(); }
+  });
+
+  // ---------- Form fill ----------
+  function fillForm(data){
+    const merged = data.merged || {};
+    const override = data.override || {};
+    const f = document.getElementById('cfgForm');
+    if(!f) return;
+
+    ['port'].forEach(k => {
+      if(!f.elements[k]) return;
+      const ov = override[k];
+      f.elements[k].value = ov !== undefined ? ov : (merged[k] || '');
     });
-  </script>
+    if(f.elements['defaultRegion']){
+      const val = override.defaultRegion !== undefined ? override.defaultRegion : (merged.defaultRegion || '');
+      f.elements['defaultRegion'].value = val || '';
+    }
+    if(f.elements['defaultProviders']){
+      f.elements['defaultProviders'].value = (override.defaultProviders || merged.defaultProviders || []).join(',');
+    }
+
+    // Cookies
+    (function(){
+      let cookiesVal = override.febboxCookies || merged.febboxCookies || [];
+      if(typeof cookiesVal === 'string'){
+        const trimmed = cookiesVal.trim();
+        if(trimmed.startsWith('[') && trimmed.endsWith(']')){
+          try { const arr = JSON.parse(trimmed); if(Array.isArray(arr)) cookiesVal = arr; } catch(_){}
+        } else if(trimmed.includes(',') || trimmed.includes('\n') || trimmed.includes(';')){
+          cookiesVal = trimmed.split(/[\n;,]+/).map(s=>s.trim()).filter(Boolean);
+        } else if(trimmed){ cookiesVal = [trimmed]; } else { cookiesVal = []; }
+      }
+      if(!Array.isArray(cookiesVal)) cookiesVal = [];
+      setFebboxCookies(cookiesVal);
+    })();
+
+    // TMDB keys
+    (function(){
+      let keys = override.tmdbApiKeys || merged.tmdbApiKeys || [];
+      if(!Array.isArray(keys)){
+        if(override.tmdbApiKey) keys = [override.tmdbApiKey];
+        else if(merged.tmdbApiKey) keys = [merged.tmdbApiKey];
+        else keys = [];
+      }
+      setTmdbKeys(keys);
+    })();
+
+    // Quality preset
+    const mqRaw = override.minQualitiesRaw !== undefined ? override.minQualitiesRaw : (merged.minQualitiesRaw || '');
+    const presetValues = ['all','480p','720p','1080p','1440p','2160p'];
+    const matchedPreset = presetValues.includes((mqRaw||'').toLowerCase()) ? mqRaw.toLowerCase() : (mqRaw ? 'custom' : 'all');
+    const presetInput = document.querySelector('input[name="qualityPreset"][value="'+matchedPreset+'"]')
+      || document.querySelector('input[name="qualityPreset"][value="all"]');
+    if(presetInput) presetInput.checked = true;
+    const customField = document.querySelector('textarea[name="minQualitiesRaw"]');
+    if(customField){
+      if(matchedPreset === 'custom'){ customField.disabled = false; customField.value = mqRaw; }
+      else { customField.disabled = true; customField.value = ''; }
+    }
+
+    // Codec preset
+    const excRaw = override.excludeCodecsRaw !== undefined ? override.excludeCodecsRaw : (merged.excludeCodecsRaw || '');
+    let parsed = null;
+    try { if(excRaw && /[{[]/.test(excRaw)) parsed = JSON.parse(excRaw); } catch(_){}
+    let mode = 'none';
+    if(parsed){
+      const dv = parsed.excludeDV === true;
+      const hdr = parsed.excludeHDR === true;
+      if(!dv && !hdr) mode = 'none';
+      else if(dv && hdr) mode = 'all';
+      else if(dv && !hdr) mode = 'dv';
+      else if(hdr && !dv) mode = 'hdr';
+      else mode = 'advanced';
+    } else if(excRaw){
+      if(/excludeDV":true/.test(excRaw) && !/excludeHDR":true/.test(excRaw)) mode = 'dv';
+      else if(/excludeHDR":true/.test(excRaw) && !/excludeDV":true/.test(excRaw)) mode = 'hdr';
+      else mode = 'advanced';
+    }
+    const presetInputC = document.querySelector('input[name="codecPreset"][value="'+mode+'"]')
+      || document.querySelector('input[name="codecPreset"][value="none"]');
+    if(presetInputC) presetInputC.checked = true;
+    const codecTa = document.querySelector('textarea[name="excludeCodecsRaw"]');
+    if(codecTa){
+      if(mode === 'advanced'){ codecTa.disabled = false; codecTa.value = excRaw || JSON.stringify({excludeDV:false,excludeHDR:false}); }
+      else { codecTa.disabled = true; codecTa.value = ''; }
+    }
+
+    // Live config panels
+    const cur = document.getElementById('currentCfg');
+    if(cur) cur.textContent = JSON.stringify(merged, null, 2);
+    const ovr = document.getElementById('overrideCfg');
+    if(ovr) ovr.textContent = (override && Object.keys(override).length) ? JSON.stringify(override, null, 2) : '(none)';
+
+    // Banners
+    const boot = document.getElementById('bootWarn');
+    if(boot) boot.style.display = (!merged.febboxCookies || merged.febboxCookies.length === 0) ? 'block' : 'none';
+    const cacheBanner = document.getElementById('cacheDisabledBanner');
+    if(cacheBanner) cacheBanner.style.display = merged.disableCache ? 'block' : 'none';
+    const tmdbBanner = document.getElementById('tmdbMissingBanner');
+    if(tmdbBanner){
+      const tmdbMissing = !((override.tmdbApiKeys && override.tmdbApiKeys.length)
+        || (merged.tmdbApiKeys && merged.tmdbApiKeys.length)
+        || override.tmdbApiKey || merged.tmdbApiKey);
+      const tmdbProvidersEnabled = [
+        merged.enableShowboxProvider !== false,
+        merged.enable4khdhubProvider !== false,
+      ].some(Boolean);
+      tmdbBanner.style.display = (tmdbMissing && tmdbProvidersEnabled) ? 'block' : 'none';
+    }
+
+    // Advanced boolean flags
+    const advBools = [
+      ['enable4khdhubProvider','adv_enable4khdhub'],
+      ['enableVixsrcProvider','adv_enableVixsrc'],
+      ['enableProxy','adv_enableProxy'],
+      ['disableCache','adv_disableCache'],
+      ['enablePStreamApi','adv_enablePStream'],
+      ['disableUrlValidation','adv_disableUrlValidation'],
+      ['disable4khdhubUrlValidation','adv_disable4khdhubValidation'],
+    ];
+    advBools.forEach(function(pair){
+      const cfgKey = pair[0], elName = pair[1];
+      const el = f.elements[elName];
+      if(!el) return;
+      const src = override[cfgKey] !== undefined ? override[cfgKey] : merged[cfgKey];
+      if(el.type === 'checkbox') el.checked = !!src;
+      else el.value = src ? 'true' : '';
+    });
+
+    // Advanced text fields
+    const advTexts = [['showboxCacheDir','adv_showboxCacheDir']];
+    advTexts.forEach(function(pair){
+      const cfgKey = pair[0], elName = pair[1];
+      const el = f.elements[elName];
+      if(!el) return;
+      const val = override[cfgKey] !== undefined ? override[cfgKey] : merged[cfgKey];
+      el.value = val || '';
+    });
+  }
+
+  async function reload(){
+    try {
+      const data = await fetchConfig();
+      fillForm(data);
+      await renderProviderMatrix(data.merged);
+      validate();
+      setStatus('');
+    } catch(e){
+      setStatus('Load failed: ' + e.message, true);
+    }
+  }
+
+  // ---------- Save ----------
+  async function save(){
+    const f = document.getElementById('cfgForm');
+    if(!f) return;
+    const payload = {};
+
+    const dp = f.elements['defaultProviders'] ? f.elements['defaultProviders'].value.trim() : '';
+    if(dp) payload.defaultProviders = dp.split(/[\s,]+/).filter(Boolean);
+
+    ['port'].forEach(function(k){
+      if(!f.elements[k]) return;
+      const v = f.elements[k].value.trim();
+      payload[k] = v ? v : null;
+    });
+
+    const selPreset = document.querySelector('input[name="qualityPreset"]:checked');
+    if(selPreset){
+      if(selPreset.value === 'custom'){
+        const cv = f.elements['minQualitiesRaw'] ? f.elements['minQualitiesRaw'].value.trim() : '';
+        payload.minQualitiesRaw = cv ? cv : null;
+      } else {
+        payload.minQualitiesRaw = selPreset.value === 'all' ? 'all' : selPreset.value;
+      }
+    }
+
+    const cPreset = document.querySelector('input[name="codecPreset"]:checked');
+    if(cPreset){
+      if(cPreset.value === 'none') payload.excludeCodecsRaw = JSON.stringify({excludeDV:false, excludeHDR:false});
+      else if(cPreset.value === 'all') payload.excludeCodecsRaw = JSON.stringify({excludeDV:true, excludeHDR:true});
+      else if(cPreset.value === 'dv') payload.excludeCodecsRaw = JSON.stringify({excludeDV:true, excludeHDR:false});
+      else if(cPreset.value === 'hdr') payload.excludeCodecsRaw = JSON.stringify({excludeDV:false, excludeHDR:true});
+      else if(cPreset.value === 'advanced'){
+        const ta = document.querySelector('textarea[name="excludeCodecsRaw"]');
+        payload.excludeCodecsRaw = (ta && ta.value.trim()) || null;
+      }
+    }
+
+    const drSel = f.elements['defaultRegion'];
+    if(drSel) payload.defaultRegion = drSel.value ? drSel.value : null;
+
+    const cookiesHidden = f.elements['febboxCookiesHidden'];
+    if(cookiesHidden){
+      const v = cookiesHidden.value.trim();
+      payload.febboxCookies = v ? v.split(',').filter(Boolean) : [];
+    }
+
+    const boolMap = {
+      adv_enable4khdhub: 'enable4khdhubProvider',
+      adv_enableVixsrc: 'enableVixsrcProvider',
+      adv_enableProxy: 'enableProxy',
+      adv_disableCache: 'disableCache',
+      adv_enablePStream: 'enablePStreamApi',
+      adv_disableUrlValidation: 'disableUrlValidation',
+      adv_disable4khdhubValidation: 'disable4khdhubUrlValidation',
+    };
+    Object.entries(boolMap).forEach(function(pair){
+      const formName = pair[0], cfgKey = pair[1];
+      const el = f.elements[formName];
+      if(el) payload[cfgKey] = !!el.checked;
+    });
+
+    const textMap = { adv_showboxCacheDir: 'showboxCacheDir' };
+    Object.entries(textMap).forEach(function(pair){
+      const formName = pair[0], cfgKey = pair[1];
+      const el = f.elements[formName];
+      if(!el) return;
+      const v = el.value.trim();
+      payload[cfgKey] = v ? v : null;
+    });
+
+    const tmdbHidden = f.elements['tmdbApiKeysHidden'];
+    if(tmdbHidden){
+      const raw = tmdbHidden.value.trim();
+      payload.tmdbApiKeys = raw ? raw.split(',').filter(Boolean) : [];
+      payload.tmdbApiKey = null;
+    }
+
+    try {
+      const r = await fetch('/api/config', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const js = await r.json();
+      if(!js.success) throw new Error(js.error || 'Save failed');
+      setStatus('Saved ✔');
+      fillForm(js);
+      await renderProviderMatrix(js.merged);
+    } catch(e){
+      setStatus(e.message, true);
+    }
+  }
+
+  // ---------- Confirm modals ----------
+  function openModal(modal){
+    if(!modal) return Promise.resolve(false);
+    modal.classList.add('show');
+    return new Promise(function(resolve){
+      function onClick(e){
+        const action = e.target && e.target.dataset && e.target.dataset.action;
+        if(action === 'confirm'){ cleanup(); resolve(true); }
+        if(action === 'cancel' || e.target === modal.querySelector('.modal-backdrop')){ cleanup(); resolve(false); }
+      }
+      function onKey(e){ if(e.key === 'Escape'){ cleanup(); resolve(false); } }
+      function cleanup(){
+        modal.classList.remove('show');
+        modal.removeEventListener('click', onClick);
+        document.removeEventListener('keydown', onKey);
+      }
+      modal.addEventListener('click', onClick);
+      document.addEventListener('keydown', onKey);
+    });
+  }
+  function openConfirmReset(){
+    const modal = document.getElementById('confirmReset');
+    if(!modal) return Promise.resolve(false);
+    try { if(localStorage.getItem('ns_confirmReset_skip') === '1') return Promise.resolve(true); } catch(_){}
+    return openModal(modal).then(function(ok){
+      if(ok){
+        try {
+          const dont = modal.querySelector('#confirmResetDontAsk');
+          if(dont && dont.checked) localStorage.setItem('ns_confirmReset_skip','1');
+        } catch(_){}
+      }
+      return ok;
+    });
+  }
+  function openConfirmRestart(){
+    return openModal(document.getElementById('confirmRestart'));
+  }
+
+  // ---------- Clear ----------
+  async function clearAll(){
+    const confirmed = await openConfirmReset();
+    if(!confirmed) return;
+    const payload = {
+      port: null,
+      defaultRegion: null,
+      defaultProviders: [],
+      minQualitiesRaw: 'all',
+      excludeCodecsRaw: JSON.stringify({excludeDV:false, excludeHDR:false}),
+      febboxCookies: [],
+      tmdbApiKeys: [],
+      tmdbApiKey: null,
+      enableShowboxProvider: true,
+      enable4khdhubProvider: true,
+      enableVixsrcProvider: true,
+      enableProxy: false,
+      disableCache: false,
+      enablePStreamApi: true,
+      disableUrlValidation: false,
+      disable4khdhubUrlValidation: false,
+      showboxCacheDir: null,
+      providerCheckTmdbId: null
+    };
+    try {
+      const r = await fetch('/api/config', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const js = await r.json();
+      if(!js.success) throw new Error(js.error || 'Clear failed');
+      setStatus('All settings reset to defaults');
+      fillForm(js);
+      try { await renderProviderMatrix(js.merged); } catch(_){}
+      validate();
+    } catch(e){
+      setStatus(e.message, true);
+    }
+  }
+
+  // ---------- Theme ----------
+  function setTheme(t){
+    document.documentElement.dataset.theme = t;
+    try { localStorage.setItem('ns_theme', t); } catch(_){}
+  }
+  function initTheme(){
+    let saved = null;
+    try { saved = localStorage.getItem('ns_theme'); } catch(_){}
+    setTheme(saved || 'dark');
+  }
+  function toggleTheme(){
+    setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+  }
+
+  // ---------- Navigation ----------
+  function navTo(id){
+    $all('.panel').forEach(function(p){ p.classList.toggle('active', p.id === id); });
+    $all('.nav-item').forEach(function(a){ a.classList.toggle('active', a.dataset.target === id); });
+    if(history.replaceState) history.replaceState(null, '', '#' + id);
+    if(id === 'panel-status') loadServerStatus();
+  }
+  function bindNavigation(){
+    $all('.nav .nav-item[data-target]').forEach(function(btn){
+      btn.addEventListener('click', function(){ navTo(btn.dataset.target); });
+    });
+    const themeBtn = document.querySelector('.nav .theme-toggle');
+    if(themeBtn) themeBtn.addEventListener('click', toggleTheme);
+  }
+  function bindShellControls(){
+    const burger = document.querySelector('.burger');
+    if(burger) burger.addEventListener('click', function(){ toggleSidebar(); });
+    const overlay = document.querySelector('.overlay');
+    if(overlay) overlay.addEventListener('click', function(){ toggleSidebar(false); });
+  }
+  function toggleSidebar(force){
+    const sb = document.getElementById('sidebar');
+    if(!sb) return;
+    const showing = force !== undefined ? force : !sb.classList.contains('open');
+    sb.classList.toggle('open', showing);
+    const ov = document.querySelector('.overlay');
+    if(ov) ov.classList.toggle('show', showing);
+  }
+
+  // ---------- Status page ----------
+  async function loadServerStatus(){
+    const metricsEl = document.getElementById('statusMetrics');
+    const endpointsEl = document.getElementById('statusEndpoints');
+    const provEnhanced = document.getElementById('statusProvidersEnhanced');
+    const lastErrEl = document.getElementById('statusLastError');
+    if(!metricsEl) return;
+    metricsEl.textContent = 'Loading…';
+    if(endpointsEl) endpointsEl.textContent = 'Loading…';
+    if(provEnhanced) provEnhanced.innerHTML = '<div class="prov-row">Loading…</div>';
+    try {
+      const r = await fetch('/api/status', { cache: 'no-store' });
+      if(!r.ok) throw new Error('Status fetch failed (HTTP ' + r.status + ')');
+      const j = await r.json();
+      if(!j.success) throw new Error('Status error');
+      metricsEl.textContent = JSON.stringify(j.metrics, null, 2);
+      if(lastErrEl) lastErrEl.textContent = (j.metrics && j.metrics.lastError) || '(none)';
+      const checkTmdbEl = document.getElementById('providerCheckTmdbId');
+      if(checkTmdbEl) checkTmdbEl.value = j.providerCheckTmdbId || '278';
+      if(endpointsEl) endpointsEl.textContent = (j.endpoints || []).join('\n');
+      if(provEnhanced){
+        provEnhanced.innerHTML = '';
+        const header = document.createElement('div');
+        header.className = 'prov-row header';
+        header.innerHTML = '<span>Name</span><span>Enabled</span><span>Cookie Req</span><span>Cookie OK</span><span>Functional</span><span>Notes</span>';
+        provEnhanced.appendChild(header);
+        (j.providers || []).forEach(function(p){
+          const row = document.createElement('div');
+          row.className = 'prov-row';
+          row.dataset.provider = p.name;
+          row.innerHTML =
+            '<strong>' + escapeHtml(p.name) + '</strong>' +
+            '<span class="badge ' + (p.enabled ? 'ok' : 'off') + '">' + (p.enabled ? 'on' : 'off') + '</span>' +
+            '<span class="badge ' + (p.cookieRequired ? 'warn' : 'off') + '">' + (p.cookieRequired ? 'yes' : 'no') + '</span>' +
+            '<span class="badge ' + (p.cookieOk ? 'ok' : 'fail') + '">' + (p.cookieOk ? 'ok' : 'missing') + '</span>' +
+            '<span class="badge" data-role="functional" title="Run provider checks first">?</span>' +
+            '<span class="notes" data-role="notes"></span>';
+          provEnhanced.appendChild(row);
+        });
+      }
+    } catch(e){
+      metricsEl.textContent = 'Failed: ' + e.message;
+      if(endpointsEl) endpointsEl.textContent = 'n/a';
+      if(provEnhanced) provEnhanced.innerHTML = '<div class="prov-row">Status load failed</div>';
+    }
+  }
+
+  async function runProviderFunctionalChecks(){
+    const checkTmdbEl = document.getElementById('providerCheckTmdbId');
+    const targetTmdb = (checkTmdbEl && checkTmdbEl.value.trim()) || '278';
+    const provEnhanced = document.getElementById('statusProvidersEnhanced');
+    const summary = document.getElementById('providerCheckSummary');
+    if(!provEnhanced || !summary) return;
+    summary.textContent = 'Running checks…';
+    const rows = Array.from(provEnhanced.querySelectorAll('.prov-row:not(.header)'));
+    let completed = 0, passed = 0;
+    for(const row of rows){
+      const name = row.dataset.provider;
+      const funcBadge = row.querySelector('[data-role="functional"]');
+      const notesEl = row.querySelector('[data-role="notes"]');
+      if(funcBadge){ funcBadge.textContent = '…'; funcBadge.className = 'badge'; }
+      if(notesEl) notesEl.textContent = '';
+
+      // Fix: robust enabled check (2nd child of row is the enabled badge)
+      const enabledBadge = row.children[1];
+      const isEnabled = enabledBadge && enabledBadge.textContent.trim() === 'on';
+      if(!isEnabled){
+        if(funcBadge){ funcBadge.textContent = 'skip'; funcBadge.className = 'badge off'; }
+        completed++;
+        summary.textContent = 'Progress: ' + completed + '/' + rows.length + ' (passed: ' + passed + ')';
+        continue;
+      }
+
+      try {
+        const r = await fetch('/api/streams/' + encodeURIComponent(name) + '/movie/' + encodeURIComponent(targetTmdb));
+        if(!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        const streamsArr = Array.isArray(j.streams) ? j.streams : null;
+        const isOk = streamsArr && streamsArr.length > 0;
+        if(isOk){
+          passed++;
+          if(funcBadge){ funcBadge.textContent = 'ok'; funcBadge.className = 'badge ok'; }
+          if(notesEl) notesEl.textContent = streamsArr.length + ' streams';
+        } else {
+          if(funcBadge){ funcBadge.textContent = 'none'; funcBadge.className = 'badge fail'; }
+          if(notesEl) notesEl.textContent = 'No streams array';
+        }
+      } catch(err){
+        if(funcBadge){ funcBadge.textContent = 'fail'; funcBadge.className = 'badge fail'; }
+        if(notesEl) notesEl.textContent = err.message;
+      }
+      completed++;
+      summary.textContent = 'Progress: ' + completed + '/' + rows.length + ' (passed: ' + passed + ')';
+    }
+    summary.textContent = 'Checks complete: ' + passed + '/' + rows.length + ' passed';
+  }
+
+  async function saveProviderCheckTmdbId(){
+    const input = document.getElementById('providerCheckTmdbId');
+    const val = (input ? input.value : '').trim();
+    if(!val){ setStatus('Enter a TMDB ID to save', true); return; }
+    if(!/^\d+$/.test(val)){ setStatus('TMDB ID must be numeric', true); return; }
+    try {
+      const r = await fetch('/api/config', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ providerCheckTmdbId: val })
+      });
+      const js = await r.json();
+      if(!js.success) throw new Error(js.error || 'Save failed');
+      setStatus('Provider check TMDB ID saved: ' + val);
+    } catch(e){
+      setStatus(e.message, true);
+    }
+  }
+
+  // ---------- Provider matrix ----------
+  async function renderProviderMatrix(merged){
+    if(!merged){
+      try { const data = await fetchConfig(); merged = data.merged || {}; } catch(_){ return; }
+    }
+    const container = document.getElementById('providerMatrix');
+    if(!container) return;
+    const defaults = (merged.defaultProviders || []).map(function(s){ return String(s).toLowerCase(); });
+
+    let availableProviders = [];
+    try {
+      const providersResponse = await fetchProviders();
+      availableProviders = providersResponse.providers || [];
+    } catch(e){
+      console.warn('Failed to fetch providers list:', e.message);
+    }
+
+    const providers = availableProviders.map(function(p){
+      const flag = 'enable' + p.name.charAt(0).toUpperCase() + p.name.slice(1) + 'Provider';
+      return [p.name, flag];
+    });
+
+    container.innerHTML = providers.map(function(pair){
+      const name = pair[0], flag = pair[1];
+      const enabled = merged[flag] !== false;
+      const isDefault = defaults.includes(name.toLowerCase());
+      return '<div class="pm-item" data-prov="' + escapeHtml(name) + '" data-flag="' + escapeHtml(flag) + '" data-enabled="' + enabled + '" data-default="' + isDefault + '">'
+        + '<button type="button" class="pm-enable" title="Enable/Disable" data-action="toggle-enable">' + (enabled ? '⏻' : '✖') + '</button>'
+        + '<span class="pm-name">' + escapeHtml(name) + '</span>'
+        + '<button type="button" class="pm-default" title="Toggle Default" data-action="toggle-default">' + (isDefault ? '★' : '☆') + '</button>'
+        + '</div>';
+    }).join('');
+
+    const hidden = document.querySelector('input[name="defaultProviders"]');
+    if(hidden) hidden.value = defaults.join(',');
+
+    if(!container._bound){
+      container.addEventListener('click', async function(e){
+        const btn = e.target.closest('button[data-action]');
+        if(!btn) return;
+        const item = btn.closest('.pm-item');
+        if(!item) return;
+        const prov = item.dataset.prov;
+        const flag = item.dataset.flag;
+        let data;
+        try { data = await fetchConfig(); } catch(err){ setStatus('Provider fetch failed', true); return; }
+        const mergedNow = data.merged || {};
+        let defaultsNow = (mergedNow.defaultProviders || []).slice();
+        const patch = {};
+        if(btn.dataset.action === 'toggle-enable'){
+          const currentlyEnabled = item.dataset.enabled === 'true';
+          patch[flag] = !currentlyEnabled;
+          if(currentlyEnabled){
+            defaultsNow = defaultsNow.filter(function(d){ return d !== prov; });
+            patch.defaultProviders = defaultsNow;
+          }
+        } else if(btn.dataset.action === 'toggle-default'){
+          const isDefault = item.dataset.default === 'true';
+          if(isDefault){
+            defaultsNow = defaultsNow.filter(function(d){ return d !== prov; });
+          } else {
+            if(defaultsNow.indexOf(prov) === -1) defaultsNow.push(prov);
+            patch[flag] = true;
+          }
+          patch.defaultProviders = defaultsNow;
+        }
+        try {
+          await fetch('/api/config', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(patch)
+          });
+          const updated = await fetchConfig();
+          fillForm(updated);
+          await renderProviderMatrix(updated.merged);
+          reloadLiveOnly();
+        } catch(err){
+          setStatus('Update failed: ' + err.message, true);
+        }
+      });
+      container._bound = true;
+    }
+  }
+
+  function reloadLiveOnly(){
+    fetchConfig().then(function(c){
+      const cur = document.getElementById('currentCfg');
+      if(cur) cur.textContent = JSON.stringify(c.merged || {}, null, 2);
+      const ovr = document.getElementById('overrideCfg');
+      if(ovr) ovr.textContent = (c.override && Object.keys(c.override).length) ? JSON.stringify(c.override, null, 2) : '(none)';
+    }).catch(function(){});
+  }
+
+  // ---------- Validation ----------
+  function validate(){
+    const f = document.getElementById('cfgForm');
+    if(!f) return true;
+    const errors = [];
+
+    const qp = document.querySelector('input[name="qualityPreset"]:checked');
+    if(qp && qp.value === 'custom'){
+      const mq = f.elements['minQualitiesRaw'] ? f.elements['minQualitiesRaw'].value.trim() : '';
+      if(mq && /[{[]/.test(mq)){
+        try { JSON.parse(mq); } catch(_){
+          errors.push('Min Qualities invalid JSON');
+          markInvalid(f.elements['minQualitiesRaw']);
+        }
+      }
+    }
+    const codecPreset = document.querySelector('input[name="codecPreset"]:checked');
+    if(codecPreset && codecPreset.value === 'advanced'){
+      const ec = f.elements['excludeCodecsRaw'] ? f.elements['excludeCodecsRaw'].value.trim() : '';
+      if(ec && /[{[]/.test(ec)){
+        try { JSON.parse(ec); } catch(_){
+          errors.push('Exclude Codecs invalid JSON');
+          markInvalid(f.elements['excludeCodecsRaw']);
+        }
+      }
+    }
+    const p = f.elements['port'] ? f.elements['port'].value.trim() : '';
+    if(p){
+      const pn = Number(p);
+      if(!(pn > 0 && pn <= 65535)){
+        errors.push('Port must be 1-65535');
+        markInvalid(f.elements['port']);
+      }
+    }
+    const dp = f.elements['defaultProviders'] ? f.elements['defaultProviders'].value.trim() : '';
+    if(dp && !/^[a-z0-9_,\-\s]+$/.test(dp)){
+      errors.push('Default Providers contains invalid chars');
+      markInvalid(f.elements['defaultProviders']);
+    }
+
+    const sum = document.getElementById('validationSummary');
+    if(sum){
+      if(errors.length){ sum.textContent = errors.join(' • '); sum.classList.add('has-errors'); }
+      else { sum.textContent = ''; sum.classList.remove('has-errors'); }
+    }
+    const saveBtn = document.getElementById('saveBtn');
+    if(saveBtn) saveBtn.disabled = errors.length > 0;
+    return errors.length === 0;
+  }
+
+  document.addEventListener('input', function(e){
+    if(e.target.closest('#cfgForm')) validate();
+  });
+  document.addEventListener('change', function(e){
+    const t = e.target;
+    if(t.name === 'qualityPreset'){
+      const customField = document.querySelector('textarea[name="minQualitiesRaw"]');
+      if(customField){
+        if(t.value === 'custom'){ customField.disabled = false; }
+        else { customField.disabled = true; customField.value = ''; }
+      }
+      validate();
+    }
+    if(t.name === 'codecPreset'){
+      const ta = document.querySelector('textarea[name="excludeCodecsRaw"]');
+      if(ta){
+        if(t.value === 'advanced'){
+          ta.disabled = false;
+          if(!ta.value.trim()) ta.value = JSON.stringify({excludeDV:false, excludeHDR:false});
+        } else {
+          ta.disabled = true;
+          ta.value = '';
+        }
+      }
+      validate();
+    }
+  });
+
+  // ---------- Core listeners ----------
+  function attachCoreListeners(){
+    const saveBtn = document.getElementById('saveBtn');
+    const reloadBtn = document.getElementById('reloadBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    if(saveBtn) saveBtn.addEventListener('click', save);
+    if(reloadBtn) reloadBtn.addEventListener('click', reload);
+    if(clearBtn) clearBtn.addEventListener('click', clearAll);
+  }
+
+  // ---------- Bootstrap ----------
+  document.addEventListener('DOMContentLoaded', function(){
+    initTheme();
+    attachCoreListeners();
+    bindNavigation();
+    bindShellControls();
+
+    const logoutBtn = document.getElementById('logoutBtn');
+    if(logoutBtn){
+      logoutBtn.addEventListener('click', async function(){
+        try { await fetch('/auth/logout', { method: 'POST' }); } catch(_){}
+        location.replace('/?loggedOut=1');
+      });
+    }
+
+    const restartBtn = document.getElementById('restartBtn');
+    if(restartBtn){
+      restartBtn.addEventListener('click', async function(){
+        const ok = await openConfirmRestart();
+        if(!ok) return;
+        setStatus('Restarting server…');
+        try {
+          const r = await fetch('/api/restart', { method: 'POST' });
+          if(!r.ok){
+            const t = await r.text().catch(function(){ return r.statusText; });
+            throw new Error(t || ('HTTP ' + r.status));
+          }
+          await new Promise(function(resolve){ setTimeout(resolve, 1000); });
+          const start = Date.now();
+          const timeoutMs = 60000;
+          (function poll(){
+            fetch('/api/health', { cache: 'no-store' })
+              .then(function(pr){
+                if(pr.ok){ location.reload(); return; }
+                if(Date.now() - start > timeoutMs){ setStatus('Restart timed out', true); return; }
+                setTimeout(poll, 1000);
+              })
+              .catch(function(){
+                if(Date.now() - start > timeoutMs){ setStatus('Restart timed out', true); return; }
+                setTimeout(poll, 1000);
+              });
+          })();
+        } catch(e){
+          setStatus('Restart failed: ' + e.message, true);
+        }
+      });
+    }
+
+    reload();
+
+    const h = location.hash.slice(1);
+    navTo(h || 'panel-status');
+
+    const advFlags = document.getElementById('advFlags');
+    if(advFlags){
+      advFlags.addEventListener('change', function(e){
+        if(e.target.matches('.adv-flag-item input[type="checkbox"]')) validate();
+      });
+    }
+
+    const rsb = document.getElementById('refreshStatusBtn');
+    if(rsb) rsb.addEventListener('click', loadServerStatus);
+    const rpc = document.getElementById('runProviderChecksBtn');
+    if(rpc) rpc.addEventListener('click', runProviderFunctionalChecks);
+    const spc = document.getElementById('saveProviderCheckTmdbBtn');
+    if(spc) spc.addEventListener('click', saveProviderCheckTmdbId);
+  });
+})();
+</script>
 </body>
 </html>
