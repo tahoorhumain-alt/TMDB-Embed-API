@@ -18,7 +18,6 @@
   body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
   a{color:var(--accent)}
   .app{display:flex;min-height:100vh}
-  /* Sidebar */
   #sidebar{width:230px;background:var(--panel);border-right:1px solid var(--border);
     position:sticky;top:0;height:100vh;overflow-y:auto;flex:0 0 auto;transition:transform .2s ease}
   #sidebar .brand{padding:16px 18px;font-weight:700;font-size:16px;border-bottom:1px solid var(--border)}
@@ -29,7 +28,6 @@
   .nav-item.active{border-left-color:var(--accent);background:var(--panel2);font-weight:600}
   .theme-toggle{margin:14px 18px;padding:8px 12px;background:var(--panel2);border:1px solid var(--border);
     color:var(--text);border-radius:6px;cursor:pointer}
-  /* Main */
   main{flex:1;padding:22px;max-width:1100px}
   h1{margin:0 0 4px;font-size:22px}
   .muted{color:var(--muted)}
@@ -53,14 +51,12 @@
   .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;white-space:pre-wrap;word-break:break-word}
   pre.mono{background:var(--panel2);padding:12px;border-radius:8px;border:1px solid var(--border);
     max-height:340px;overflow:auto}
-  /* Cookies / keys */
   #febboxCookieList,#tmdbKeyList{display:flex;flex-direction:column;gap:6px;margin-top:8px}
   .cookie-item,.key-item{display:flex;gap:8px;align-items:center;background:var(--panel2);
     padding:6px 10px;border-radius:6px;border:1px solid var(--border)}
   .cookie-item code,.key-item code{flex:1;font-size:11px;word-break:break-all;color:var(--muted)}
   .cookie-item .remove,.key-item .remove{background:none;border:0;color:var(--fail);cursor:pointer;font-size:14px}
   .empty{color:var(--muted);font-style:italic;padding:8px}
-  /* Provider matrix */
   #providerMatrix{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
   .pm-item{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--border);
     border-radius:6px;padding:6px 10px}
@@ -68,7 +64,6 @@
   .pm-name{font-weight:600;font-size:13px}
   .pm-enable,.pm-default{background:none;border:0;cursor:pointer;font-size:14px;color:var(--text)}
   .pm-item[data-default="true"] .pm-default{color:var(--warn)}
-  /* Status page */
   .prov-row{display:grid;grid-template-columns:1.4fr .6fr .7fr .7fr .8fr 1.5fr;
     gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border);font-size:13px}
   .prov-row.header{font-weight:700;color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.5px}
@@ -78,20 +73,17 @@
   .badge.warn{background:rgba(241,196,15,.15);color:var(--warn)}
   .badge.fail{background:rgba(231,76,60,.15);color:var(--fail)}
   .notes{font-size:12px;color:var(--muted)}
-  /* Modal */
   .modal{display:none;position:fixed;inset:0;align-items:center;justify-content:center;z-index:50}
   .modal.show{display:flex}
   .modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55)}
   .modal-body{position:relative;background:var(--panel);border:1px solid var(--border);
     border-radius:10px;padding:20px;max-width:420px;width:90%;z-index:1}
   .modal-body h3{margin:0 0 8px}
-  /* Banner */
   .banner{display:none;padding:10px 14px;border-radius:8px;margin:10px 0;font-size:13px}
   .banner.warn{background:rgba(241,196,15,.1);border:1px solid var(--warn);color:var(--warn)}
   .banner.info{background:rgba(79,140,255,.1);border:1px solid var(--accent);color:var(--accent)}
   #validationSummary{min-height:20px;font-size:12px;color:var(--muted);margin:6px 0}
   #validationSummary.has-errors{color:var(--fail);font-weight:600}
-  /* Mobile */
   .burger{display:none;background:var(--panel);border:1px solid var(--border);color:var(--text);
     padding:8px 12px;border-radius:6px;cursor:pointer;margin-right:10px}
   .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40}
@@ -131,7 +123,6 @@
     <div id="tmdbMissingBanner" class="banner warn">No TMDB API key configured. TMDB-dependent providers will fail.</div>
     <div id="bootWarn" class="banner warn">No FebBox cookies configured. Showbox/PStream streams may be unavailable.</div>
 
-    <!-- STATUS -->
     <section id="panel-status" class="panel active">
       <h1>Server Status</h1>
       <div class="card">
@@ -163,7 +154,6 @@
       </div>
     </section>
 
-    <!-- CORE -->
     <section id="panel-core" class="panel">
       <h1>Core Settings</h1>
       <form id="cfgForm" class="card" onsubmit="return false">
@@ -184,7 +174,6 @@
       </form>
     </section>
 
-    <!-- QUALITY -->
     <section id="panel-quality" class="panel">
       <h1>Quality &amp; Filtering</h1>
       <div class="card">
@@ -211,7 +200,6 @@
       </div>
     </section>
 
-    <!-- KEYS -->
     <section id="panel-keys" class="panel">
       <h1>API Keys</h1>
       <div class="card">
@@ -225,7 +213,6 @@
       </div>
     </section>
 
-    <!-- FEBBOX -->
     <section id="panel-febbox" class="panel">
       <h1>FebBox / PStream</h1>
       <div class="card">
@@ -240,7 +227,6 @@
       </div>
     </section>
 
-    <!-- ADVANCED -->
     <section id="panel-advanced" class="panel">
       <h1>Advanced &amp; Providers</h1>
       <div class="card">
@@ -259,7 +245,6 @@
       </div>
     </section>
 
-    <!-- PATHS -->
     <section id="panel-paths" class="panel">
       <h1>Paths</h1>
       <div class="card">
@@ -267,7 +252,6 @@
       </div>
     </section>
 
-    <!-- LIVE -->
     <section id="panel-live" class="panel">
       <h1>Live Configuration</h1>
       <div class="card">
@@ -284,7 +268,6 @@
   </main>
 </div>
 
-<!-- Modals -->
 <div id="confirmReset" class="modal">
   <div class="modal-backdrop"></div>
   <div class="modal-body">
@@ -314,7 +297,6 @@
 (function(){
   'use strict';
 
-  // ---------- Utilities ----------
   function $(sel, root){ return (root||document).querySelector(sel); }
   function $all(sel, root){ return Array.from((root||document).querySelectorAll(sel)); }
 
@@ -324,11 +306,13 @@
     el.textContent = msg || '';
     el.style.color = isErr ? 'var(--fail)' : 'var(--muted)';
   }
-
   function markInvalid(el){
     if(!el) return;
     el.classList.add('invalid');
     setTimeout(()=>el.classList.remove('invalid'), 3000);
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
   async function fetchConfig(){
@@ -342,7 +326,7 @@
     return r.json();
   }
 
-  // ---------- FebBox cookies ----------
+  // ---- cookies ----
   function setFebboxCookies(cookiesArray){
     const listEl = document.getElementById('febboxCookieList');
     const hidden = document.querySelector('input[name="febboxCookiesHidden"]');
@@ -376,7 +360,7 @@
     validate();
   }
 
-  // ---------- TMDB keys ----------
+  // ---- tmdb keys ----
   function setTmdbKeys(keys){
     const listEl = document.getElementById('tmdbKeyList');
     const hidden = document.querySelector('input[name="tmdbApiKeysHidden"]');
@@ -410,11 +394,6 @@
     validate();
   }
 
-  function escapeHtml(s){
-    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  }
-
-  // ---------- Global click/keydown for cookies & keys ----------
   document.addEventListener('click', (e) => {
     if(e.target.closest('#addFebboxCookieBtn')) return void addFebboxCookie();
     const rmCookie = e.target.closest('.cookie-item button.remove');
@@ -429,7 +408,7 @@
     if(e.target && e.target.id === 'tmdbKeyInput'){ e.preventDefault(); addTmdbKey(); }
   });
 
-  // ---------- Form fill ----------
+  // ---- fill ----
   function fillForm(data){
     const merged = data.merged || {};
     const override = data.override || {};
@@ -449,7 +428,6 @@
       f.elements['defaultProviders'].value = (override.defaultProviders || merged.defaultProviders || []).join(',');
     }
 
-    // Cookies
     (function(){
       let cookiesVal = override.febboxCookies || merged.febboxCookies || [];
       if(typeof cookiesVal === 'string'){
@@ -464,7 +442,6 @@
       setFebboxCookies(cookiesVal);
     })();
 
-    // TMDB keys
     (function(){
       let keys = override.tmdbApiKeys || merged.tmdbApiKeys || [];
       if(!Array.isArray(keys)){
@@ -475,7 +452,6 @@
       setTmdbKeys(keys);
     })();
 
-    // Quality preset
     const mqRaw = override.minQualitiesRaw !== undefined ? override.minQualitiesRaw : (merged.minQualitiesRaw || '');
     const presetValues = ['all','480p','720p','1080p','1440p','2160p'];
     const matchedPreset = presetValues.includes((mqRaw||'').toLowerCase()) ? mqRaw.toLowerCase() : (mqRaw ? 'custom' : 'all');
@@ -488,10 +464,9 @@
       else { customField.disabled = true; customField.value = ''; }
     }
 
-    // Codec preset
     const excRaw = override.excludeCodecsRaw !== undefined ? override.excludeCodecsRaw : (merged.excludeCodecsRaw || '');
     let parsed = null;
-    try { if(excRaw && /[{[]/.test(excRaw)) parsed = JSON.parse(excRaw); } catch(_){}
+    try { if(excRaw && /[\{\[]/.test(excRaw)) parsed = JSON.parse(excRaw); } catch(_){}
     let mode = 'none';
     if(parsed){
       const dv = parsed.excludeDV === true;
@@ -515,13 +490,11 @@
       else { codecTa.disabled = true; codecTa.value = ''; }
     }
 
-    // Live config panels
     const cur = document.getElementById('currentCfg');
     if(cur) cur.textContent = JSON.stringify(merged, null, 2);
     const ovr = document.getElementById('overrideCfg');
     if(ovr) ovr.textContent = (override && Object.keys(override).length) ? JSON.stringify(override, null, 2) : '(none)';
 
-    // Banners
     const boot = document.getElementById('bootWarn');
     if(boot) boot.style.display = (!merged.febboxCookies || merged.febboxCookies.length === 0) ? 'block' : 'none';
     const cacheBanner = document.getElementById('cacheDisabledBanner');
@@ -538,7 +511,6 @@
       tmdbBanner.style.display = (tmdbMissing && tmdbProvidersEnabled) ? 'block' : 'none';
     }
 
-    // Advanced boolean flags
     const advBools = [
       ['enable4khdhubProvider','adv_enable4khdhub'],
       ['enableVixsrcProvider','adv_enableVixsrc'],
@@ -557,7 +529,6 @@
       else el.value = src ? 'true' : '';
     });
 
-    // Advanced text fields
     const advTexts = [['showboxCacheDir','adv_showboxCacheDir']];
     advTexts.forEach(function(pair){
       const cfgKey = pair[0], elName = pair[1];
@@ -580,7 +551,6 @@
     }
   }
 
-  // ---------- Save ----------
   async function save(){
     const f = document.getElementById('cfgForm');
     if(!f) return;
@@ -653,7 +623,10 @@
     const tmdbHidden = f.elements['tmdbApiKeysHidden'];
     if(tmdbHidden){
       const raw = tmdbHidden.value.trim();
-      payload.tmdbApiKeys = raw ? raw.split(',').filter(Boolean) : [];
+      const list = raw ? raw.split(',').filter(Boolean) : [];
+      if(!(list.length === 1 && list[0] === '***')){
+        payload.tmdbApiKeys = list;
+      }
       payload.tmdbApiKey = null;
     }
 
@@ -673,7 +646,6 @@
     }
   }
 
-  // ---------- Confirm modals ----------
   function openModal(modal){
     if(!modal) return Promise.resolve(false);
     modal.classList.add('show');
@@ -711,7 +683,6 @@
     return openModal(document.getElementById('confirmRestart'));
   }
 
-  // ---------- Clear ----------
   async function clearAll(){
     const confirmed = await openConfirmReset();
     if(!confirmed) return;
@@ -752,7 +723,6 @@
     }
   }
 
-  // ---------- Theme ----------
   function setTheme(t){
     document.documentElement.dataset.theme = t;
     try { localStorage.setItem('ns_theme', t); } catch(_){}
@@ -766,7 +736,6 @@
     setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
   }
 
-  // ---------- Navigation ----------
   function navTo(id){
     $all('.panel').forEach(function(p){ p.classList.toggle('active', p.id === id); });
     $all('.nav-item').forEach(function(a){ a.classList.toggle('active', a.dataset.target === id); });
@@ -795,7 +764,6 @@
     if(ov) ov.classList.toggle('show', showing);
   }
 
-  // ---------- Status page ----------
   async function loadServerStatus(){
     const metricsEl = document.getElementById('statusMetrics');
     const endpointsEl = document.getElementById('statusEndpoints');
@@ -858,7 +826,6 @@
       if(funcBadge){ funcBadge.textContent = '…'; funcBadge.className = 'badge'; }
       if(notesEl) notesEl.textContent = '';
 
-      // Fix: robust enabled check (2nd child of row is the enabled badge)
       const enabledBadge = row.children[1];
       const isEnabled = enabledBadge && enabledBadge.textContent.trim() === 'on';
       if(!isEnabled){
@@ -911,7 +878,6 @@
     }
   }
 
-  // ---------- Provider matrix ----------
   async function renderProviderMatrix(merged){
     if(!merged){
       try { const data = await fetchConfig(); merged = data.merged || {}; } catch(_){ return; }
@@ -1004,7 +970,6 @@
     }).catch(function(){});
   }
 
-  // ---------- Validation ----------
   function validate(){
     const f = document.getElementById('cfgForm');
     if(!f) return true;
@@ -1013,7 +978,7 @@
     const qp = document.querySelector('input[name="qualityPreset"]:checked');
     if(qp && qp.value === 'custom'){
       const mq = f.elements['minQualitiesRaw'] ? f.elements['minQualitiesRaw'].value.trim() : '';
-      if(mq && /[{[]/.test(mq)){
+      if(mq && /[\{\[]/.test(mq)){
         try { JSON.parse(mq); } catch(_){
           errors.push('Min Qualities invalid JSON');
           markInvalid(f.elements['minQualitiesRaw']);
@@ -1023,7 +988,7 @@
     const codecPreset = document.querySelector('input[name="codecPreset"]:checked');
     if(codecPreset && codecPreset.value === 'advanced'){
       const ec = f.elements['excludeCodecsRaw'] ? f.elements['excludeCodecsRaw'].value.trim() : '';
-      if(ec && /[{[]/.test(ec)){
+      if(ec && /[\{\[]/.test(ec)){
         try { JSON.parse(ec); } catch(_){
           errors.push('Exclude Codecs invalid JSON');
           markInvalid(f.elements['excludeCodecsRaw']);
@@ -1082,7 +1047,6 @@
     }
   });
 
-  // ---------- Core listeners ----------
   function attachCoreListeners(){
     const saveBtn = document.getElementById('saveBtn');
     const reloadBtn = document.getElementById('reloadBtn');
@@ -1092,7 +1056,6 @@
     if(clearBtn) clearBtn.addEventListener('click', clearAll);
   }
 
-  // ---------- Bootstrap ----------
   document.addEventListener('DOMContentLoaded', function(){
     initTheme();
     attachCoreListeners();
