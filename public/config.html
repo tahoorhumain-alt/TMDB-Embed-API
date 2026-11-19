@@ -326,7 +326,6 @@
     return r.json();
   }
 
-  // ---- cookies ----
   function setFebboxCookies(cookiesArray){
     const listEl = document.getElementById('febboxCookieList');
     const hidden = document.querySelector('input[name="febboxCookiesHidden"]');
@@ -360,7 +359,6 @@
     validate();
   }
 
-  // ---- tmdb keys ----
   function setTmdbKeys(keys){
     const listEl = document.getElementById('tmdbKeyList');
     const hidden = document.querySelector('input[name="tmdbApiKeysHidden"]');
@@ -408,7 +406,6 @@
     if(e.target && e.target.id === 'tmdbKeyInput'){ e.preventDefault(); addTmdbKey(); }
   });
 
-  // ---- fill ----
   function fillForm(data){
     const merged = data.merged || {};
     const override = data.override || {};
@@ -593,7 +590,10 @@
     const cookiesHidden = f.elements['febboxCookiesHidden'];
     if(cookiesHidden){
       const v = cookiesHidden.value.trim();
-      payload.febboxCookies = v ? v.split(',').filter(Boolean) : [];
+      const list = v ? v.split(',').filter(Boolean) : [];
+      if(!(list.length === 1 && list[0] === '***')){
+        payload.febboxCookies = list;
+      }
     }
 
     const boolMap = {
@@ -902,7 +902,7 @@
     container.innerHTML = providers.map(function(pair){
       const name = pair[0], flag = pair[1];
       const enabled = merged[flag] !== false;
-      const isDefault = defaults.includes(name.toLowerCase());
+      const isDefault = defaults.includes(String(name).toLowerCase());
       return '<div class="pm-item" data-prov="' + escapeHtml(name) + '" data-flag="' + escapeHtml(flag) + '" data-enabled="' + enabled + '" data-default="' + isDefault + '">'
         + '<button type="button" class="pm-enable" title="Enable/Disable" data-action="toggle-enable">' + (enabled ? '⏻' : '✖') + '</button>'
         + '<span class="pm-name">' + escapeHtml(name) + '</span>'
